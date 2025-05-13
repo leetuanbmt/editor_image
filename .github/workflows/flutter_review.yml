@@ -1,0 +1,383 @@
+name: Flutter Review Workflow
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  analyze_and_test:
+    name: Phân tích và kiểm thử
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Cài đặt Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.1"
+          channel: "stable"
+          cache: true
+          architecture: x64
+
+      - name: Cài đặt dependencies
+        run: flutter pub get
+
+      - name: Flutter generate models
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Flutter generate locale
+        run: flutter pub run bin/generate.dart
+
+      # Kiểm tra 2.1 và 2.2: Code compiles without warnings, Static analysis
+      - name: Phân tích code
+        run: flutter analyze
+
+      # Kiểm tra 2.4: No spelling mistakes
+      - name: Kiểm tra lỗi chính tả
+        run: |
+          echo "Checking for common spelling mistakes..."
+          grep -r -i "\b\(recieve\|lenght\|heigth\|widht\|paramater\|cancle\|retreive\|occured\)\b" --include="*.dart" lib/ || true
+          # Thông báo nhưng không lỗi nếu tìm thấy
+
+      # Kiểm tra 3.1-3.4: Naming conventions
+      - name: Kiểm tra quy tắc đặt tên
+        run: |
+          echo "Checking class naming conventions (3.1)..."
+          # Tìm các lớp không tuân theo UpperCamelCase
+          grep -r "class [a-z]" --include="*.dart" lib/ && echo "Classes should use UpperCamelCase" || echo "Class naming OK"
+
+          echo "Checking variable naming conventions (3.3)..."
+          # Tìm các biến không tuân theo lowerCamelCase (khó kiểm tra tự động hoàn toàn)
+          grep -r "final [A-Z]" --include="*.dart" lib/ && echo "Variables should use lowerCamelCase" || echo "Variable naming OK"
+
+      # Kiểm tra 4.5: No commented-out code
+      - name: Kiểm tra commented-out code
+        run: |
+          echo "Checking for commented-out code..."
+          commented_code=$(grep -r "//.*\(return\|if\|}\|{\|for\|while\)" --include="*.dart" lib/ | wc -l)
+          echo "Potential commented-out code lines: $commented_code"
+
+      # Kiểm tra 4.9: No prints in code
+      - name: Kiểm tra print statements
+        run: |
+          if grep -r "print(" --include="*.dart" lib/; then
+            echo "print() statements found in code"
+            exit 1
+          fi
+
+      # Kiểm tra 4.13: Switch cases have default
+      - name: Kiểm tra switch cases
+        run: |
+          echo "Checking switch cases for default statements..."
+          switches=$(grep -r "switch" --include="*.dart" lib/ | wc -l)
+          defaults=$(grep -r "default:" --include="*.dart" lib/ | wc -l)
+          echo "Number of switch statements: $switches"
+          echo "Number of default cases: $defaults"
+          if [ $switches -gt $defaults ]; then
+            echo "Warning: Not all switch statements have default cases"
+          fi
+
+      # Kiểm tra 4.14: Code fit in screen
+      - name: Kiểm tra độ dài dòng code
+        run: |
+          echo "Checking line length (4.14)..."
+          long_lines=$(grep -r ".\{100,\}" --include="*.dart" lib/ | wc -l)
+          echo "Lines longer than 100 characters: $long_lines"
+
+      # Kiểm tra 6.1: Package imports
+      - name: Kiểm tra package imports
+        run: |
+          if grep -r "import '\.\./" --include="*.dart" lib/; then
+            echo "Relative imports found, use package imports instead"
+            exit 1
+          fi
+
+      # Kiểm tra 6.2: flutter_lints
+      - name: Kiểm tra flutter_lints
+        run: |
+          if grep -q "flutter_lints" pubspec.yaml; then
+            echo "flutter_lints is present in pubspec.yaml"
+          else
+            echo "flutter_lints is missing in pubspec.yaml"
+            exit 1
+          fi
+
+      # Chạy tests
+      - name: Chạy tests
+        run: flutter test --coverage
+
+      # Kiểm tra 4.12: Used const in Widgets
+      - name: Kiểm tra sử dụng const
+        run: |
+          non_const_widgets=$(grep -r "Widget build" --include="*.dart" lib/ | grep -v "const" | wc -l)
+          echo "Non-const widgets found: $non_const_widgets"
+
+      # Kiểm tra 11.1: Network requests try-catch
+      - name: Kiểm tra try-catch cho network requests
+        run: |
+          echo "Checking network requests wrapped in try-catch..."
+          http_requests=$(grep -r "\.\(get\|post\|put\|delete\|patch\)(.*)" --include="*.dart" lib/ | wc -l)
+          try_catch=$(grep -r "try {" --include="*.dart" lib/ | wc -l)
+          echo "Potential HTTP requests: $http_requests"
+          echo "try-catch blocks: $try_catch"
+
+      # Kiểm tra 12.1: Dependencies up to date
+      - name: Kiểm tra dependencies
+        run: |
+          flutter pub outdated
+
+      # Kiểm tra 12.4: Environment variables
+      - name: Kiểm tra biến môi trường
+        run: |
+          if grep -r "API_KEY=" --include="*.dart" lib/; then
+            echo "API keys found in code"
+            exit 1
+          fi
+
+      # Phát hiện performance issues
+      - name: Kiểm tra vấn đề hiệu suất
+        run: |
+          # Tìm kiếm các widget lồng nhau quá nhiều (7.3: Widgets do not produce render errors)
+          deep_nesting=$(grep -r "children:" --include="*.dart" lib/ | wc -l)
+          echo "Potential deep nesting issues: $deep_nesting"
+
+          # Tìm kiếm hardcoded sizes (7.1)
+          hardcoded_sizes=$(grep -r "width: [0-9]" --include="*.dart" lib/ | wc -l)
+          echo "Hardcoded widget sizes found: $hardcoded_sizes"
+
+          # Tìm kiếm hardcoded colors (7.2)
+          hardcoded_colors=$(grep -r "color: Color(" --include="*.dart" lib/ | wc -l)
+          echo "Hardcoded colors found: $hardcoded_colors"
+
+          # Tìm widgets có thể gây rebuild không cần thiết (8.1-8.3)
+          stateful_widgets=$(grep -r "class.*extends StatefulWidget" --include="*.dart" lib/ | wc -l)
+          build_context_watch=$(grep -r "context.watch" --include="*.dart" lib/ | wc -l)
+          build_context_select=$(grep -r "context.select" --include="*.dart" lib/ | wc -l)
+          echo "StatefulWidget count: $stateful_widgets"
+          echo "context.watch() usage: $build_context_watch"
+          echo "context.select() usage: $build_context_select"
+
+      # Lưu kết quả kiểm tra để báo cáo
+      - name: Lưu kết quả kiểm tra
+        if: always()
+        run: |
+          mkdir -p reports
+          echo "## Kết quả kiểm tra tự động" > reports/analysis_results.md
+          echo "### Tên PR: ${{ github.event.pull_request.title }}" >> reports/analysis_results.md
+          echo "### Người tạo PR: ${{ github.event.pull_request.user.login }}" >> reports/analysis_results.md
+          echo "### Thời gian kiểm tra: $(date)" >> reports/analysis_results.md
+          echo "### Link PR: ${{ github.event.pull_request.html_url }}" >> reports/analysis_results.md
+          echo "" >> reports/analysis_results.md
+
+          # Lấy thông tin commits
+          echo "### Commits:" >> reports/analysis_results.md
+          git log --pretty=format:"- %h: %s" -n 5 >> reports/analysis_results.md
+          echo "" >> reports/analysis_results.md
+
+          # Lấy thông tin file thay đổi
+          echo "### Files thay đổi:" >> reports/analysis_results.md
+          git diff --name-only HEAD~1 HEAD >> reports/analysis_results.md
+          echo "" >> reports/analysis_results.md
+
+          # Tổng hợp kết quả kiểm tra
+          echo "### Kết quả kiểm tra:" >> reports/analysis_results.md
+
+          # Phân tích code
+          if flutter analyze > /dev/null 2>&1; then
+            echo "✅ **Phân tích code**: Passed" >> reports/analysis_results.md
+          else
+            echo "❌ **Phân tích code**: Failed" >> reports/analysis_results.md
+          fi
+
+          # Prints
+          if grep -r "print(" --include="*.dart" lib/ > /dev/null 2>&1; then
+            echo "❌ **Print statements**: Found" >> reports/analysis_results.md
+          else
+            echo "✅ **Print statements**: Not found" >> reports/analysis_results.md
+          fi
+
+          # Package imports
+          if grep -r "import '\.\./" --include="*.dart" lib/ > /dev/null 2>&1; then
+            echo "❌ **Relative imports**: Found" >> reports/analysis_results.md
+          else
+            echo "✅ **Package imports**: OK" >> reports/analysis_results.md
+          fi
+
+          # Hardcoded sizes
+          hardcoded_sizes=$(grep -r "width: [0-9]" --include="*.dart" lib/ | wc -l)
+          if [ $hardcoded_sizes -gt 0 ]; then
+            echo "⚠️ **Hardcoded sizes**: $hardcoded_sizes occurrences" >> reports/analysis_results.md
+          else
+            echo "✅ **Hardcoded sizes**: None" >> reports/analysis_results.md
+          fi
+
+          # Hardcoded colors
+          hardcoded_colors=$(grep -r "color: Color(" --include="*.dart" lib/ | wc -l)
+          if [ $hardcoded_colors -gt 0 ]; then
+            echo "⚠️ **Hardcoded colors**: $hardcoded_colors occurrences" >> reports/analysis_results.md
+          else
+            echo "✅ **Hardcoded colors**: None" >> reports/analysis_results.md
+          fi
+
+          # Const widgets
+          non_const_widgets=$(grep -r "Widget build" --include="*.dart" lib/ | grep -v "const" | wc -l)
+          if [ $non_const_widgets -gt 0 ]; then
+            echo "⚠️ **Non-const widgets**: $non_const_widgets occurrences" >> reports/analysis_results.md
+          else
+            echo "✅ **Const widgets**: All widgets use const" >> reports/analysis_results.md
+          fi
+
+          # Line length
+          long_lines=$(grep -r ".\{100,\}" --include="*.dart" lib/ | wc -l)
+          if [ $long_lines -gt 0 ]; then
+            echo "⚠️ **Long lines**: $long_lines lines longer than 100 characters" >> reports/analysis_results.md
+          else
+            echo "✅ **Line length**: All lines are within limit" >> reports/analysis_results.md
+          fi
+
+          # Tests
+          if flutter test --coverage > /dev/null 2>&1; then
+            echo "✅ **Tests**: Passed" >> reports/analysis_results.md
+          else
+            echo "❌ **Tests**: Failed" >> reports/analysis_results.md
+          fi
+
+          # Link tới full log
+          echo "" >> reports/analysis_results.md
+          echo "### [Xem chi tiết tại đây](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> reports/analysis_results.md
+
+      - name: Upload analysis report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: analysis-report
+          path: reports/analysis_results.md
+
+  manual_review_checklist:
+    name: Checklist kiểm tra thủ công
+    runs-on: ubuntu-latest
+    # Không phụ thuộc vào job analyze_and_test
+    # needs: [analyze_and_test]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Hiển thị checklist review
+        run: |
+          # Hiển thị nội dung của .github/pull_request_template.md
+          if [ -f ".github/pull_request_template.md" ]; then
+            cat .github/pull_request_template.md
+          else
+            echo "File .github/pull_request_template.md không tìm thấy!"
+            exit 1
+          fi
+
+      # Chỉ upload artifact khi chạy trong GitHub Actions
+      - name: Upload checklist
+        if: ${{ github.actions }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: manual-review-checklist
+          path: .github/pull_request_template.md
+
+  notify_leader:
+    name: Thông báo cho Leader
+    runs-on: ubuntu-latest
+    needs: [analyze_and_test, manual_review_checklist]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Tải báo cáo phân tích
+        uses: actions/download-artifact@v3
+        with:
+          name: analysis-report
+          path: reports
+
+      - name: Đọc báo cáo phân tích
+        id: read_report
+        run: |
+          REPORT_CONTENT=$(cat reports/analysis_results.md)
+          # Escape newlines and special characters for GitHub Actions
+          REPORT_CONTENT="${REPORT_CONTENT//'%'/'%25'}"
+          REPORT_CONTENT="${REPORT_CONTENT//$'\n'/'%0A'}"
+          REPORT_CONTENT="${REPORT_CONTENT//$'\r'/'%0D'}"
+          echo "::set-output name=content::$REPORT_CONTENT"
+
+      # Gửi thông báo qua Slack
+      - name: Thông báo qua Slack
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          payload: |
+            {
+              "text": "Kết quả kiểm tra PR từ ${{ github.event.pull_request.user.login }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🔍 Báo cáo kiểm tra PR"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*PR:* <${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}>\n*Người tạo:* ${{ github.event.pull_request.user.login }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ steps.read_report.outputs.content }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "Xem PR"
+                      },
+                      "url": "${{ github.event.pull_request.html_url }}"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "Xem Workflow"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      # Tùy chọn: Thông báo qua Microsoft Teams
+      # - name: Thông báo qua Microsoft Teams
+      #   if: false # Bỏ comment dòng này để kích hoạt
+      #   uses: toko-bifrost/ms-teams-deploy-card@master
+      #   with:
+      #     webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+      #     title: "Báo cáo kiểm tra PR"
+      #     summary: "PR: ${{ github.event.pull_request.title }}"
+      #     text: "${{ steps.read_report.outputs.content }}"
+      #     theme-color: "0078D7"
+      #     actions: '[{"@type": "OpenUri", "name": "Xem PR", "targets": [{"os": "default", "uri": "${{ github.event.pull_request.html_url }}"}]}, {"@type": "OpenUri", "name": "Xem Workflow", "targets": [{"os": "default", "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]'
+
+      # Tùy chọn: Thông báo qua Discord
+      # - name: Thông báo qua Discord
+      #   if: false # Bỏ comment dòng này để kích hoạt
+      #   uses: Ilshidur/action-discord@master
+      #   with:
+      #     args: 'PR: ${{ github.event.pull_request.title }}\nNgười tạo: ${{ github.event.pull_request.user.login }}\n${{ steps.read_report.outputs.content }}'
+      #   env:
+      #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
