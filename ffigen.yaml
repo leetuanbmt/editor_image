@@ -1,0 +1,45 @@
+# Run with `dart run ffigen --config ffigen.yaml`.
+name: ImageProcessorBindings
+description: |
+  Bindings cho thư viện xử lý ảnh.
+
+  Tạo lại bindings với lệnh `dart run ffigen --config ffigen.yaml`.
+output: "lib/image_processor_bindings_generated.dart"
+headers:
+  entry-points:
+    - "ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64/Headers/image_processor.h"
+# llvm-path:
+#   - "/opt/homebrew/opt/llvm/bin"
+preamble: |
+  // ignore_for_file: always_specify_types
+  // ignore_for_file: camel_case_types
+  // ignore_for_file: non_constant_identifier_names
+comments:
+  style: any
+  length: full
+functions:
+  include:
+    - "^CropImage$"
+    - "^ResizeImage$"
+    - "^CropAndResizeImage$"
+    - "^OverlayImage$"
+    - "^ApplyBoardOverlay$"
+  rename:
+    CropImage: "cropImage"
+    ResizeImage: "resizeImage"
+    CropAndResizeImage: "cropAndResizeImage"
+    OverlayImage: "overlayImage"
+    ApplyBoardOverlay: "applyBoardOverlay"
+structs:
+  exclude:
+    - ".*"
+macros:
+  exclude:
+    - ".*"
+enums:
+  exclude:
+    - ".*"
+globals:
+  exclude:
+    - ".*"
+silence-enum-warning: true

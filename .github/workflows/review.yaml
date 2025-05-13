@@ -1,0 +1,78 @@
+name: Flutter Code Review
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "**.dart"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/**"
+
+jobs:
+  code_review:
+    name: Code Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Thiết lập Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.1"
+          channel: "stable"
+          cache: true
+
+      - name: Cài đặt dependencies
+        run: flutter pub get
+
+      - name: Kiểm tra định dạng code
+        run: dart format --set-exit-if-changed lib test
+
+      - name: Phân tích tĩnh
+        run: flutter analyze
+
+      - name: Chạy unit tests
+        run: flutter test --coverage
+
+      - name: Kiểm tra bộ nhớ cache hình ảnh
+        run: |
+          echo "Kiểm tra mã liên quan đến cache hình ảnh:"
+          grep -r "PaintingBinding.instance.imageCache" lib || echo "Không tìm thấy tham chiếu tới image cache"
+          grep -r "chunkEvents.close" lib || echo "Không tìm thấy tham chiếu tới việc đóng stream"
+
+      - name: Kiểm tra ListViews
+        run: |
+          echo "Kiểm tra mã liên quan đến ListView:"
+          grep -r "ListView(" lib | grep -v "ListView.builder" | grep -v "ListView.separated" || echo "Không tìm thấy ListView tiêu chuẩn"
+          grep -r "ListView.separated" lib || echo "Không tìm thấy ListView.separated"
+
+      - name: Kiểm tra sử dụng UniqueKey
+        run: |
+          echo "Kiểm tra sử dụng UniqueKey cho danh sách lớn:"
+          grep -r "UniqueKey" lib || echo "Không tìm thấy UniqueKey"
+
+      - name: Kiểm tra tối ưu hóa hình ảnh
+        run: |
+          echo "Kiểm tra các thành phần xử lý hình ảnh:"
+          grep -r "Image(" lib || echo "Không tìm thấy Image widget"
+          grep -r "readAsBytesSync" lib || echo "Không tìm thấy đọc file đồng bộ"
+
+      - name: Tóm tắt các lỗi phổ biến
+        run: |
+          echo "## Checklist Review Code" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Kiểm tra cơ chế giải phóng bộ nhớ cache" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Tối ưu ListView cho danh sách lớn" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Tránh sử dụng UniqueKey trong ListView" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Giới hạn kích thước ImageCache" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Sử dụng stream controller đúng cách" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Đảm bảo tất cả resources được dispose" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        uses: reviewdog/action-suggester@v1
+        with:
+          github_token: ${{ secrets.REVIEW_CODE }}
+          tool_name: flutter_review
