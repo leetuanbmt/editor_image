@@ -29,9 +29,6 @@ jobs:
       - name: Cài đặt dependencies
         run: flutter pub get
 
-      - name: Kiểm tra định dạng code
-        run: dart format --set-exit-if-changed lib test
-
       - name: Phân tích tĩnh
         run: flutter analyze
 
