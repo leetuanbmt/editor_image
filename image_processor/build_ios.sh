@@ -31,6 +31,27 @@ TARGET_SDK=$2
 LIB_NAME=$3
 GO_SOURCE_DIR=$4
 
+# --- Kiểm tra và cài đặt libvips cho iOS ---
+VIPS_DIR="$GO_SOURCE_DIR/libvips-ios"
+VIPS_INCLUDE="$VIPS_DIR/include"
+VIPS_LIB="$VIPS_DIR/lib"
+
+if [ ! -d "$VIPS_DIR" ] || [ ! -d "$VIPS_LIB" ]; then
+    echo "INFO: Thư mục libvips chưa được cài đặt cho iOS. Đang cài đặt..."
+    mkdir -p "$VIPS_INCLUDE"
+    mkdir -p "$VIPS_LIB"
+    
+    # Script để tải và cài đặt libvips tại đây
+    # Đây là bước giả định, trong thực tế bạn cần tải prebuilt libvips cho iOS
+    # hoặc biên dịch từ nguồn cho mỗi kiến trúc
+    echo "CẢNH BÁO: Cần cài đặt thư viện libvips prebuilt cho iOS"
+    echo "Vui lòng tải libvips prebuilt từ nguồn chính thức hoặc tự biên dịch"
+    echo "và đặt vào thư mục: $VIPS_DIR"
+    
+    # Trong môi trường CI/CD hoặc phát triển thực, chúng ta sẽ tự động tải và cài đặt
+    # libvips từ một nguồn đáng tin cậy ở đây
+fi
+
 # --- Thiết lập các biến ---
 export GOOS=ios
 export CGO_ENABLED=1
@@ -75,16 +96,18 @@ if [ "$TARGET_SDK" = "iphonesimulator" ]; then
   IOS_TARGET_TRIPLE="${IOS_TARGET_TRIPLE}-simulator"
 fi
 
-# Thiết lập CC cho Go. Giữ đơn giản.
+# Thiết lập CC cho Go với các flags cho libvips
 export CC="${CLANG_COMPILER} -target ${IOS_TARGET_TRIPLE} -isysroot ${SDK_PATH}"
 
-# Để trống CGO_CFLAGS và CGO_LDFLAGS để Go và Clang tự xử lý nhiều nhất có thể.
-# Nếu bạn chắc chắn cần bitcode và nó không gây lỗi, bạn có thể thêm:
-# export CGO_CFLAGS="-fembed-bitcode"
-# export CGO_LDFLAGS="-fembed-bitcode" # Một số tài liệu đề cập LDFLAGS cũng cần
-unset CGO_CFLAGS
-unset CGO_LDFLAGS
+# Thêm đường dẫn đến thư viện và include libvips
+export CGO_CFLAGS="-I${VIPS_INCLUDE} -I${VIPS_INCLUDE}/glib-2.0"
+export CGO_LDFLAGS="-L${VIPS_LIB} -lvips -lgobject-2.0 -lglib-2.0 -lorc-0.4"
 
+# Đảm bảo rằng bitcode được bật (nếu cần)
+if [ "$TARGET_SDK" = "iphoneos" ]; then
+    export CGO_CFLAGS="$CGO_CFLAGS -fembed-bitcode"
+    export CGO_LDFLAGS="$CGO_LDFLAGS -fembed-bitcode"
+fi
 
 # --- Tạo thư mục output ---
 OUTPUT_DIR="build/ios"
@@ -101,8 +124,8 @@ echo "INFO: C_ARCH=$C_ARCH"
 echo "INFO: CC=$CC"
 echo "INFO: SDK_PATH=$SDK_PATH"
 echo "INFO: IOS_TARGET_TRIPLE=$IOS_TARGET_TRIPLE"
-echo "INFO: CGO_CFLAGS (sau khi unset) = $CGO_CFLAGS"
-echo "INFO: CGO_LDFLAGS (sau khi unset)= $CGO_LDFLAGS"
+echo "INFO: CGO_CFLAGS=$CGO_CFLAGS"
+echo "INFO: CGO_LDFLAGS=$CGO_LDFLAGS"
 
 
 go build -v -trimpath -buildmode=c-archive -o "${OUTPUT_FILE_BASE}.a" "$GO_SOURCE_DIR"
@@ -111,3 +134,34 @@ go build -v -trimpath -buildmode=c-archive -o "${OUTPUT_FILE_BASE}.a" "$GO_SOURC
 echo "INFO: Build thành công cho iOS $TARGET_SDK ($TARGET_GOARCH):"
 echo "  Archive: ${OUTPUT_FILE_BASE}.a"
 echo "  Header:  ${OUTPUT_FILE_BASE}.h"
+
+# Sao chép các thư viện tĩnh của libvips vào thư mục đầu ra để Xcode có thể liên kết với chúng
+echo "INFO: Bổ sung thư viện libvips và các phụ thuộc vào archive..."
+COMBINED_LIB="${OUTPUT_FILE_BASE}_with_vips.a"
+
+# Tạo danh sách các thư viện tĩnh cần kết hợp
+if [ -d "$VIPS_LIB" ]; then
+    STATIC_LIBS=$(find "$VIPS_LIB" -name "*.a")
+    if [ -n "$STATIC_LIBS" ]; then
+        # Tạo một bản sao của thư viện gốc
+        cp "${OUTPUT_FILE_BASE}.a" "$COMBINED_LIB"
+        
+        # Liệt kê các thư viện tĩnh có sẵn
+        echo "INFO: Kết hợp các thư viện tĩnh sau vào archive:"
+        for lib in $STATIC_LIBS; do
+            echo "  - $(basename $lib)"
+            # Thêm nội dung của thư viện tĩnh vào archive kết hợp
+            ar -x "$lib"
+            ar -r "$COMBINED_LIB" *.o
+            rm *.o
+        done
+        
+        # Thay thế file gốc bằng file kết hợp
+        mv "$COMBINED_LIB" "${OUTPUT_FILE_BASE}.a"
+        echo "INFO: Đã kết hợp thư viện libvips vào archive chính."
+    else
+        echo "CẢNH BÁO: Không tìm thấy thư viện tĩnh libvips tại $VIPS_LIB"
+    fi
+else
+    echo "CẢNH BÁO: Thư mục thư viện libvips không tồn tại: $VIPS_LIB"
+fi

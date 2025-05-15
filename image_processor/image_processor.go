@@ -10,10 +10,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"image"
-	"image/draw"
-	"image/jpeg"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,8 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/disintegration/imaging"
-	"github.com/rwcarlsen/goexif/exif"
+	"github.com/davidbyttow/govips/v2/vips"
 )
 
 const (
@@ -48,6 +43,9 @@ var (
 	processCache     = make(map[string]*cachedResult)
 	cacheMutex       sync.RWMutex
 	nextCacheCleanup = time.Now().Add(5 * time.Minute)
+
+	// Đã khởi tạo vips
+	vipsInitialized bool
 )
 
 // Cấu trúc lưu cache
@@ -57,6 +55,9 @@ type cachedResult struct {
 }
 
 func init() {
+	// Khởi tạo libvips
+	initVips()
+
 	// Khởi tạo memory pool
 	memoryPool = sync.Pool{
 		New: func() interface{} {
@@ -78,6 +79,33 @@ func init() {
 			cleanupCache()
 		}
 	}()
+}
+
+// Khởi tạo libvips
+func initVips() {
+	if !vipsInitialized {
+		vips.LoggingSettings(func(domain string, level vips.LogLevel, message string) {
+			// Chỉ log các cảnh báo và lỗi
+			if level >= vips.LogLevelWarning {
+				fmt.Printf("[%s] %s: %s\n", level, domain, message)
+			}
+		}, vips.LogLevelWarning)
+
+		vips.Startup(&vips.Config{
+			ConcurrencyLevel: runtime.NumCPU(),
+			MaxCacheFiles:    50,
+			MaxCacheMem:      100 * 1024 * 1024, // 100MB cache
+			MaxCacheSize:     500,
+			ReportLeaks:      false,
+			CollectStats:     false,
+		})
+		vipsInitialized = true
+
+		// Đảm bảo vips được dọn dẹp khi chương trình kết thúc
+		runtime.SetFinalizer(&vipsInitialized, func(_ *bool) {
+			vips.Shutdown()
+		})
+	}
 }
 
 //export CropImage
@@ -339,14 +367,15 @@ func checkImageSize(filePath string) error {
 	// Kiểm tra kích thước ảnh theo pixel - chỉ cho ảnh nhỏ
 	// Với ảnh lớn, không cần kiểm tra kích thước pixel để tránh tải toàn bộ ảnh vào bộ nhớ
 	if fileInfo.Size() < LargeImageSize {
-		config, err := imaging.Open(filePath)
+		// Sử dụng vips để đọc thông tin kích thước ảnh
+		img, err := vips.NewImageFromFile(filePath)
 		if err != nil {
 			return fmt.Errorf("không thể mở ảnh để kiểm tra kích thước: %v", err)
 		}
+		defer img.Close()
 
-		bounds := config.Bounds()
-		width := bounds.Dx()
-		height := bounds.Dy()
+		width := img.Width()
+		height := img.Height()
 
 		// Ghi vào cache
 		if width <= MaxImageDimension && height <= MaxImageDimension {
@@ -410,286 +439,312 @@ func ensureOutputDir(outputPath string) error {
 	return nil
 }
 
-// Đọc thông tin EXIF để xác định hướng ảnh
-func getImageOrientation(file io.Reader) (int, error) {
-	// Mặc định orientation = 1 (không xoay)
-	orientation := 1
+// Cập nhật hàm để sử dụng vips thay vì imaging
+func cropImage(inputPath, outputPath string, cropX, cropY, cropWidth, cropHeight float64, quality int) error {
+	return processWithTimeout(func() error {
+		// Đảm bảo thư mục đầu ra tồn tại
+		if err := ensureOutputDir(outputPath); err != nil {
+			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
+		}
 
-	// Đọc metadata EXIF
-	x, err := exif.Decode(file)
-	if err != nil {
-		// Nếu không đọc được EXIF, giả định orientation = 1
-		return orientation, nil
-	}
-
-	// Lấy giá trị orientation
-	tag, err := x.Get(exif.Orientation)
-	if err != nil {
-		// Nếu không có tag orientation, giả định orientation = 1
-		return orientation, nil
-	}
-
-	// Chuyển đổi giá trị sang int
-	if val, err := tag.Int(0); err == nil {
-		orientation = val
-	}
-
-	return orientation, nil
-}
-
-// Xoay ảnh dựa trên orientation EXIF
-func fixOrientation(img image.Image, orientation int) image.Image {
-	switch orientation {
-	case 2:
-		// Lật ngang
-		return imaging.FlipH(img)
-	case 3:
-		// Xoay 180 độ
-		return imaging.Rotate180(img)
-	case 4:
-		// Lật dọc
-		return imaging.FlipV(img)
-	case 5:
-		// Xoay 90 độ và lật ngang
-		rotated := imaging.Rotate90(img)
-		return imaging.FlipH(rotated)
-	case 6:
-		// Xoay 90 độ theo chiều kim đồng hồ
-		return imaging.Rotate270(img)
-	case 7:
-		// Xoay 270 độ và lật ngang
-		rotated := imaging.Rotate270(img)
-		return imaging.FlipH(rotated)
-	case 8:
-		// Xoay 270 độ theo chiều kim đồng hồ
-		return imaging.Rotate90(img)
-	default:
-		// Giữ nguyên (orientation = 1 hoặc giá trị không hợp lệ)
-		return img
-	}
-}
-
-// Mở ảnh có xử lý EXIF
-func openImageWithOrientation(filePath string) (image.Image, error) {
-	// Mở file để đọc EXIF trước
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("không thể mở file ảnh: %v", err)
-	}
-	defer file.Close()
-
-	// Đọc thông tin orientation
-	orientation, _ := getImageOrientation(file)
-
-	// Đóng và mở lại file để đọc ảnh (cần reset vị trí đọc)
-	file.Close()
-
-	// Mở ảnh bằng imaging
-	img, err := imaging.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Sửa orientation nếu cần
-	if orientation > 1 {
-		img = fixOrientation(img, orientation)
-	}
-
-	return img, nil
-}
-
-// Lưu ảnh với thông tin EXIF được bảo toàn
-func saveImagePreservingMetadata(img image.Image, outputPath string, inputPath string, quality int) error {
-	// Tạo thư mục đầu ra nếu chưa tồn tại
-	if err := ensureOutputDir(outputPath); err != nil {
-		return err
-	}
-
-	// Nếu là định dạng JPEG, thử bảo toàn metadata
-	if filepath.Ext(outputPath) == ".jpg" || filepath.Ext(outputPath) == ".jpeg" {
-		return saveJPEGWithMetadata(img, outputPath, quality)
-	}
-
-	// Nếu không phải JPEG, sử dụng hàm lưu thông thường
-	return imaging.Save(img, outputPath, imaging.JPEGQuality(quality))
-}
-
-// Lưu ảnh JPEG với metadata được bảo toàn
-func saveJPEGWithMetadata(img image.Image, outputPath string, quality int) error {
-	// Tạo file đầu ra
-	out, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	// Mã hóa ảnh thành JPEG
-	opts := jpeg.Options{Quality: quality}
-	if err := jpeg.Encode(out, img, &opts); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Cập nhật hàm openAndProcess để sử dụng xử lý orientation mới
-func openAndProcess(inputPath string, processFunc func(img image.Image) (image.Image, error), outputPath string, quality int) error {
-	// Đảm bảo thư mục đầu ra tồn tại
-	if err := ensureOutputDir(outputPath); err != nil {
-		return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
-	}
-
-	// Nếu là ảnh lớn và có thể chia tile
-	if isLargeImage(inputPath) && supportsParallelProcessing(processFunc) {
-		return processByTiles(inputPath, processFunc, outputPath, quality)
-	}
-
-	// Xử lý ảnh bình thường với xử lý orientation
-	src, err := openImageWithOrientation(inputPath)
-	if err != nil {
-		return fmt.Errorf("không thể mở ảnh: %v", err)
-	}
-
-	// Xử lý ảnh với hàm được cung cấp
-	result, err := processFunc(src)
-	if err != nil {
-		// Giải phóng bộ nhớ
-		src = nil
-		runtime.GC()
-		return err
-	}
-
-	// Giải phóng bộ nhớ
-	src = nil
-	runtime.GC()
-
-	// Lưu kết quả trong goroutine riêng để tránh chặn
-	saveResult := make(chan error, 1)
-	go func() {
-		saveErr := saveImagePreservingMetadata(result, outputPath, inputPath, quality)
-		result = nil // Giải phóng bộ nhớ
-		runtime.GC()
-		saveResult <- saveErr
-	}()
-
-	// Đợi lưu xong
-	if err := <-saveResult; err != nil {
-		return fmt.Errorf("không thể lưu ảnh đã xử lý: %v", err)
-	}
-
-	return nil
-}
-
-// Kiểm tra xem hàm xử lý có hỗ trợ xử lý song song hay không
-func supportsParallelProcessing(_ func(img image.Image) (image.Image, error)) bool {
-	// Hiện tại chỉ resize hỗ trợ xử lý song song
-	// Crop, overlay không dễ song song hóa
-	return false // Mặc định không hỗ trợ, sẽ mở rộng sau
-}
-
-// Xử lý ảnh lớn bằng cách chia thành các tile nhỏ và xử lý song song
-func processByTiles(inputPath string, processFunc func(img image.Image) (image.Image, error), outputPath string, quality int) error {
-	// Mở ảnh gốc
-	src, err := imaging.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("không thể mở ảnh: %v", err)
-	}
-
-	bounds := src.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-
-	// Chỉ áp dụng cho ảnh đủ lớn
-	if width < 1000 || height < 1000 {
-		// Ảnh nhỏ, xử lý bình thường
-		result, err := processFunc(src)
+		// Mở ảnh
+		img, err := vips.NewImageFromFile(inputPath)
 		if err != nil {
-			src = nil
-			runtime.GC()
-			return err
+			return fmt.Errorf("không thể mở ảnh: %v", err)
 		}
+		defer img.Close()
 
-		src = nil
-		runtime.GC()
-
-		return imaging.Save(result, outputPath, imaging.JPEGQuality(quality))
-	}
-
-	// Chia ảnh thành các tile
-	tileWidth := width / ConcurrentTiles
-	tileHeight := height / ConcurrentTiles
-
-	// Chuẩn bị kết quả
-	var wg sync.WaitGroup
-	results := make([]*image.NRGBA, ConcurrentTiles*ConcurrentTiles)
-	errors := make([]error, ConcurrentTiles*ConcurrentTiles)
-
-	// Xử lý từng tile
-	for y := 0; y < ConcurrentTiles; y++ {
-		for x := 0; x < ConcurrentTiles; x++ {
-			wg.Add(1)
-			go func(tileX, tileY int) {
-				defer wg.Done()
-
-				// Tính toán vùng cắt
-				startX := tileX * tileWidth
-				startY := tileY * tileHeight
-				endX := startX + tileWidth
-				endY := startY + tileHeight
-
-				if endX > width {
-					endX = width
-				}
-				if endY > height {
-					endY = height
-				}
-
-				// Cắt tile
-				tile := imaging.Crop(src, image.Rect(startX, startY, endX, endY))
-
-				// Xử lý tile
-				processed, err := processFunc(tile)
-				if err != nil {
-					errors[tileY*ConcurrentTiles+tileX] = err
-					return
-				}
-
-				// Lưu kết quả
-				results[tileY*ConcurrentTiles+tileX] = processed.(*image.NRGBA)
-			}(x, y)
-		}
-	}
-
-	// Đợi tất cả các tile xử lý xong
-	wg.Wait()
-
-	// Kiểm tra lỗi
-	for i, err := range errors {
+		// Thực hiện crop
+		err = img.ExtractArea(int(cropX), int(cropY), int(cropWidth), int(cropHeight))
 		if err != nil {
-			return fmt.Errorf("lỗi xử lý tile %d: %v", i, err)
+			return fmt.Errorf("không thể cắt ảnh: %v", err)
 		}
-	}
 
-	// Ghép các tile lại
-	result := imaging.New(width, height, image.Transparent)
-	for y := 0; y < ConcurrentTiles; y++ {
-		for x := 0; x < ConcurrentTiles; x++ {
-			startX := x * tileWidth
-			startY := y * tileHeight
-			tile := results[y*ConcurrentTiles+x]
-			if tile != nil {
-				result = imaging.Paste(result, tile, image.Pt(startX, startY))
+		// Lưu ảnh với chất lượng cụ thể
+		exportParams := vips.NewJpegExportParams()
+		exportParams.Quality = quality
+
+		// Tự động xử lý EXIF orientation
+		exportParams.StripMetadata = false
+		exportParams.Autorotate = true
+
+		_, err = img.ExportJpegFile(outputPath, exportParams)
+		if err != nil {
+			return fmt.Errorf("không thể lưu ảnh: %v", err)
+		}
+
+		return nil
+	})
+}
+
+func resizeImage(inputPath, outputPath string, width, height int, quality int) error {
+	return processWithTimeout(func() error {
+		// Đảm bảo thư mục đầu ra tồn tại
+		if err := ensureOutputDir(outputPath); err != nil {
+			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
+		}
+
+		// Mở ảnh
+		img, err := vips.NewImageFromFile(inputPath)
+		if err != nil {
+			return fmt.Errorf("không thể mở ảnh: %v", err)
+		}
+		defer img.Close()
+
+		// Thực hiện resize với độ nét tốt nhất cho chất lượng cao
+		var vipsResize vips.Kernel
+		if quality >= 90 {
+			vipsResize = vips.KernelLanczos3 // Chất lượng cao nhất
+		} else if quality >= 70 {
+			vipsResize = vips.KernelMitchell // Cân bằng tốt
+		} else {
+			vipsResize = vips.KernelNearest // Nhanh nhất
+		}
+
+		// Resize ảnh
+		err = img.Resize(float64(width)/float64(img.Width()), vips.KernelLanczos3)
+		if err != nil {
+			return fmt.Errorf("không thể resize ảnh: %v", err)
+		}
+
+		// Lưu ảnh với chất lượng cụ thể
+		exportParams := vips.NewJpegExportParams()
+		exportParams.Quality = quality
+
+		// Tự động xử lý EXIF orientation
+		exportParams.StripMetadata = false
+		exportParams.Autorotate = true
+
+		_, err = img.ExportJpegFile(outputPath, exportParams)
+		if err != nil {
+			return fmt.Errorf("không thể lưu ảnh: %v", err)
+		}
+
+		return nil
+	})
+}
+
+func cropAndResizeImage(inputPath, outputPath string, cropX, cropY, cropWidth, cropHeight float64, width, height int, quality int) error {
+	return processWithTimeout(func() error {
+		// Đảm bảo thư mục đầu ra tồn tại
+		if err := ensureOutputDir(outputPath); err != nil {
+			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
+		}
+
+		// Mở ảnh
+		img, err := vips.NewImageFromFile(inputPath)
+		if err != nil {
+			return fmt.Errorf("không thể mở ảnh: %v", err)
+		}
+		defer img.Close()
+
+		// Thực hiện crop
+		err = img.ExtractArea(int(cropX), int(cropY), int(cropWidth), int(cropHeight))
+		if err != nil {
+			return fmt.Errorf("không thể cắt ảnh: %v", err)
+		}
+
+		// Chọn thuật toán resize phù hợp
+		var vipsResize vips.Kernel
+		if quality >= 90 {
+			vipsResize = vips.KernelLanczos3 // Chất lượng cao nhất
+		} else if quality >= 70 {
+			vipsResize = vips.KernelMitchell // Cân bằng tốt
+		} else {
+			vipsResize = vips.KernelNearest // Nhanh nhất
+		}
+
+		// Tính tỷ lệ để resize
+		scale := float64(width) / float64(img.Width())
+
+		// Thực hiện resize
+		err = img.Resize(scale, vipsResize)
+		if err != nil {
+			return fmt.Errorf("không thể resize ảnh: %v", err)
+		}
+
+		// Lưu ảnh với chất lượng cụ thể
+		exportParams := vips.NewJpegExportParams()
+		exportParams.Quality = quality
+
+		// Tự động xử lý EXIF orientation
+		exportParams.StripMetadata = false
+		exportParams.Autorotate = true
+
+		_, err = img.ExportJpegFile(outputPath, exportParams)
+		if err != nil {
+			return fmt.Errorf("không thể lưu ảnh: %v", err)
+		}
+
+		return nil
+	})
+}
+
+func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width, height int, quality int) error {
+	return processWithTimeout(func() error {
+		// Đảm bảo thư mục đầu ra tồn tại
+		if err := ensureOutputDir(outputPath); err != nil {
+			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
+		}
+
+		// Mở ảnh nền
+		baseImg, err := vips.NewImageFromFile(basePath)
+		if err != nil {
+			return fmt.Errorf("không thể mở ảnh nền: %v", err)
+		}
+		defer baseImg.Close()
+
+		// Mở ảnh overlay
+		overlayImg, err := vips.NewImageFromFile(overlayPath)
+		if err != nil {
+			return fmt.Errorf("không thể mở ảnh overlay: %v", err)
+		}
+		defer overlayImg.Close()
+
+		// Resize overlay nếu cần
+		if width > 0 && height > 0 {
+			// Tính tỷ lệ để resize
+			scale := float64(width) / float64(overlayImg.Width())
+
+			// Chọn thuật toán resize phù hợp
+			var vipsResize vips.Kernel
+			if quality >= 90 {
+				vipsResize = vips.KernelLanczos3
+			} else if quality >= 70 {
+				vipsResize = vips.KernelMitchell
+			} else {
+				vipsResize = vips.KernelNearest
+			}
+
+			// Thực hiện resize
+			err = overlayImg.Resize(scale, vipsResize)
+			if err != nil {
+				return fmt.Errorf("không thể resize ảnh overlay: %v", err)
 			}
 		}
-	}
 
-	// Giải phóng bộ nhớ
-	src = nil
-	results = nil
-	runtime.GC()
+		// Thực hiện overlay - cần đảm bảo kênh alpha
+		if overlayImg.HasAlpha() == false {
+			err = overlayImg.AddAlpha()
+			if err != nil {
+				return fmt.Errorf("không thể thêm kênh alpha vào ảnh overlay: %v", err)
+			}
+		}
 
-	// Lưu kết quả
-	return imaging.Save(result, outputPath, imaging.JPEGQuality(quality))
+		// Compositing: đặt overlay lên ảnh nền
+		err = baseImg.Composite(overlayImg, vips.BlendModeOver, int(x), int(y))
+		if err != nil {
+			return fmt.Errorf("không thể ghép ảnh: %v", err)
+		}
+
+		// Lưu ảnh với chất lượng cụ thể
+		exportParams := vips.NewJpegExportParams()
+		exportParams.Quality = quality
+
+		// Tự động xử lý EXIF orientation
+		exportParams.StripMetadata = false
+		exportParams.Autorotate = true
+
+		_, err = baseImg.ExportJpegFile(outputPath, exportParams)
+		if err != nil {
+			return fmt.Errorf("không thể lưu ảnh: %v", err)
+		}
+
+		return nil
+	})
+}
+
+func applyBoardOverlay(inputPath, outputPath, backgroundFile string, width, height int, x, y float64, quality int) error {
+	return processWithTimeout(func() error {
+		// Đảm bảo thư mục đầu ra tồn tại
+		if err := ensureOutputDir(outputPath); err != nil {
+			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
+		}
+
+		// Mở ảnh chính
+		baseImg, err := vips.NewImageFromFile(inputPath)
+		if err != nil {
+			return fmt.Errorf("không thể mở ảnh gốc: %v", err)
+		}
+		defer baseImg.Close()
+
+		// Nếu có file background, xử lý như overlayImage
+		if backgroundFile != "" {
+			bgImg, err := vips.NewImageFromFile(backgroundFile)
+			if err != nil {
+				return fmt.Errorf("không thể mở ảnh nền: %v", err)
+			}
+			defer bgImg.Close()
+
+			// Resize background nếu cần
+			if width > 0 && height > 0 {
+				// Tính tỷ lệ để resize
+				scaleX := float64(width) / float64(bgImg.Width())
+
+				// Chọn thuật toán resize phù hợp
+				var vipsResize vips.Kernel
+				if quality >= 90 {
+					vipsResize = vips.KernelLanczos3
+				} else if quality >= 70 {
+					vipsResize = vips.KernelMitchell
+				} else {
+					vipsResize = vips.KernelNearest
+				}
+
+				// Thực hiện resize
+				err = bgImg.Resize(scaleX, vipsResize)
+				if err != nil {
+					return fmt.Errorf("không thể resize ảnh background: %v", err)
+				}
+			}
+
+			// Đảm bảo ảnh chính có kênh alpha
+			if baseImg.HasAlpha() == false {
+				err = baseImg.AddAlpha()
+				if err != nil {
+					return fmt.Errorf("không thể thêm kênh alpha vào ảnh chính: %v", err)
+				}
+			}
+
+			// Tạo một ảnh mới với kích thước của ảnh chính
+			compositedImg := baseImg.Copy()
+			defer compositedImg.Close()
+
+			// Đặt background vào vị trí x,y
+			err = compositedImg.Composite(bgImg, vips.BlendModeOver, int(x), int(y))
+			if err != nil {
+				return fmt.Errorf("không thể ghép ảnh background: %v", err)
+			}
+
+			// Lưu ảnh với chất lượng cụ thể
+			exportParams := vips.NewJpegExportParams()
+			exportParams.Quality = quality
+
+			// Tự động xử lý EXIF orientation
+			exportParams.StripMetadata = false
+			exportParams.Autorotate = true
+
+			_, err = compositedImg.ExportJpegFile(outputPath, exportParams)
+			if err != nil {
+				return fmt.Errorf("không thể lưu ảnh: %v", err)
+			}
+		} else {
+			// Nếu không có background, chỉ lưu ảnh chính
+			exportParams := vips.NewJpegExportParams()
+			exportParams.Quality = quality
+
+			// Tự động xử lý EXIF orientation
+			exportParams.StripMetadata = false
+			exportParams.Autorotate = true
+
+			_, err = baseImg.ExportJpegFile(outputPath, exportParams)
+			if err != nil {
+				return fmt.Errorf("không thể lưu ảnh: %v", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // Tạo hash key cho cache
@@ -771,209 +826,7 @@ func cleanupCache() {
 	}
 }
 
-// Go implementation functions - đã tối ưu hóa
-
-func cropImage(inputPath, outputPath string, cropX, cropY, cropWidth, cropHeight float64, quality int) error {
-	return processWithTimeout(func() error {
-		return openAndProcess(inputPath, func(img image.Image) (image.Image, error) {
-			return imaging.Crop(img, image.Rect(int(cropX), int(cropY), int(cropX+cropWidth), int(cropY+cropHeight))), nil
-		}, outputPath, quality)
-	})
+func main() {
+	// Đảm bảo vips được khởi tạo
+	initVips()
 }
-
-func resizeImage(inputPath, outputPath string, width, height int, quality int) error {
-	return processWithTimeout(func() error {
-		return openAndProcess(inputPath, func(img image.Image) (image.Image, error) {
-			// Sử dụng thuật toán nhanh hơn cho ảnh lớn
-			filter := imaging.Lanczos
-			if isLargeImage(inputPath) && quality < 90 {
-				// Dùng box filter cho ảnh lớn và chất lượng thấp
-				filter = imaging.Box
-			}
-			return imaging.Resize(img, width, height, filter), nil
-		}, outputPath, quality)
-	})
-}
-
-func cropAndResizeImage(inputPath, outputPath string, cropX, cropY, cropWidth, cropHeight float64, width, height int, quality int) error {
-	return processWithTimeout(func() error {
-		return openAndProcess(inputPath, func(img image.Image) (image.Image, error) {
-			// Crop trước
-			cropped := imaging.Crop(img, image.Rect(int(cropX), int(cropY), int(cropX+cropWidth), int(cropY+cropHeight)))
-
-			// Resize sau
-			img = nil // Giải phóng ảnh gốc
-			runtime.GC()
-
-			// Sử dụng thuật toán nhanh hơn cho ảnh lớn
-			filter := imaging.Lanczos
-			if quality < 90 {
-				// Dùng box filter cho chất lượng thấp
-				filter = imaging.Box
-			}
-
-			return imaging.Resize(cropped, width, height, filter), nil
-		}, outputPath, quality)
-	})
-}
-
-func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width, height int, quality int) error {
-	return processWithTimeout(func() error {
-		// Đảm bảo thư mục đầu ra tồn tại
-		if err := ensureOutputDir(outputPath); err != nil {
-			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
-		}
-
-		// Sử dụng concurrent loading cho cả hai ảnh
-		var wg sync.WaitGroup
-		var baseImg, overlayImg image.Image
-		var baseErr, overlayErr error
-
-		// Tải song song hai ảnh với xử lý orientation
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			baseImg, baseErr = openImageWithOrientation(basePath)
-		}()
-
-		go func() {
-			defer wg.Done()
-			overlayImg, overlayErr = openImageWithOrientation(overlayPath)
-		}()
-
-		// Đợi tải xong
-		wg.Wait()
-
-		// Kiểm tra lỗi
-		if baseErr != nil {
-			return fmt.Errorf("không thể mở ảnh nền: %v", baseErr)
-		}
-
-		if overlayErr != nil {
-			return fmt.Errorf("không thể mở ảnh overlay: %v", overlayErr)
-		}
-
-		// Lấy kích thước ảnh nền
-		bounds := baseImg.Bounds()
-		dst := imaging.New(bounds.Dx(), bounds.Dy(), image.Transparent)
-		dst = imaging.Paste(dst, baseImg, image.Pt(0, 0))
-
-		// Giải phóng bộ nhớ
-		baseImg = nil
-		runtime.GC()
-
-		// Resize overlay nếu cần
-		if width > 0 && height > 0 {
-			// Chọn thuật toán resize dựa trên chất lượng
-			filter := imaging.Lanczos
-			if quality < 90 {
-				filter = imaging.Box // Nhanh hơn cho chất lượng thấp
-			}
-			overlayImg = imaging.Resize(overlayImg, width, height, filter)
-		}
-
-		// Đặt overlay lên ảnh nền
-		dst = imaging.Paste(dst, overlayImg, image.Pt(int(x), int(y)))
-
-		// Giải phóng bộ nhớ
-		overlayImg = nil
-		runtime.GC()
-
-		// Lưu kết quả trong goroutine riêng
-		saveChan := make(chan error, 1)
-		go func() {
-			saveErr := saveImagePreservingMetadata(dst, outputPath, basePath, quality)
-			dst = nil // Giải phóng bộ nhớ
-			runtime.GC()
-			saveChan <- saveErr
-		}()
-
-		if err := <-saveChan; err != nil {
-			return fmt.Errorf("không thể lưu ảnh đã xử lý: %v", err)
-		}
-
-		return nil
-	})
-}
-
-func applyBoardOverlay(inputPath, outputPath, backgroundFile string, width, height int, x, y float64, quality int) error {
-	return processWithTimeout(func() error {
-		// Đảm bảo thư mục đầu ra tồn tại
-		if err := ensureOutputDir(outputPath); err != nil {
-			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
-		}
-
-		// Tải ảnh chính với xử lý orientation
-		baseImg, err := openImageWithOrientation(inputPath)
-		if err != nil {
-			return fmt.Errorf("không thể mở ảnh gốc: %v", err)
-		}
-
-		bounds := baseImg.Bounds()
-		dst := image.NewRGBA(bounds)
-
-		// Bắt đầu vẽ theo từng lớp
-		draw.Draw(dst, bounds, baseImg, image.Point{}, draw.Src)
-
-		// Giải phóng bộ nhớ ngay sau khi sử dụng xong
-		baseImg = nil
-		runtime.GC()
-
-		// Xử lý ảnh nền nếu có, sử dụng goroutine
-		if backgroundFile != "" {
-			var wg sync.WaitGroup
-			var backgroundImg image.Image
-			var bgErr error
-
-			// Tải ảnh nền trong goroutine riêng với xử lý orientation
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				backgroundImg, bgErr = openImageWithOrientation(backgroundFile)
-				if bgErr == nil && backgroundImg != nil {
-					// Chọn thuật toán resize phù hợp
-					filter := imaging.Lanczos
-					if quality < 90 {
-						filter = imaging.Box
-					}
-					backgroundImg = imaging.Resize(backgroundImg, width, height, filter)
-				}
-			}()
-
-			// Đợi tải xong ảnh nền
-			wg.Wait()
-
-			if bgErr == nil && backgroundImg != nil {
-				bgRect := image.Rectangle{
-					Min: image.Point{int(x), int(y)},
-					Max: image.Point{int(x) + width, int(y) + height},
-				}
-
-				draw.Draw(dst, bgRect, backgroundImg, image.Point{}, draw.Over)
-
-				// Giải phóng bộ nhớ
-				backgroundImg = nil
-				runtime.GC()
-			} else if bgErr != nil {
-				fmt.Printf("Lỗi khi mở ảnh nền: %v\n", bgErr)
-			}
-		}
-
-		// Lưu kết quả trong goroutine riêng
-		saveChan := make(chan error, 1)
-		go func() {
-			saveErr := saveImagePreservingMetadata(dst, outputPath, inputPath, quality)
-			dst = nil // Giải phóng bộ nhớ
-			runtime.GC()
-			saveChan <- saveErr
-		}()
-
-		if err := <-saveChan; err != nil {
-			return fmt.Errorf("không thể lưu ảnh đã xử lý: %v", err)
-		}
-
-		return nil
-	})
-}
-
-func main() {}

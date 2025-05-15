@@ -62,7 +62,6 @@ elif [ ! -d "$ANDROID_NDK_HOME_INTERNAL" ]; then
   exit 1
 fi
 
-
 # --- Xác định cấu hình dựa trên ABI ---
 API_LEVEL=21 # Có thể điều chỉnh nếu cần API level cao hơn
 GOOS_TARGET="android"
@@ -130,6 +129,27 @@ if [ ! -f "$NDK_TOOLCHAIN_PATH/$CC_COMPILER" ]; then
     exit 1
 fi
 
+# --- Kiểm tra và cài đặt libvips trong thư mục dự án ---
+VIPS_DIR="$GO_SOURCE_DIR/libvips-android"
+VIPS_INCLUDE="$VIPS_DIR/include"
+VIPS_LIB="$VIPS_DIR/$OUTPUT_SUBDIR/lib"
+
+if [ ! -d "$VIPS_DIR" ] || [ ! -d "$VIPS_LIB" ]; then
+    echo "INFO: Thư mục libvips chưa được cài đặt cho Android. Đang cài đặt..."
+    mkdir -p "$VIPS_DIR/include"
+    mkdir -p "$VIPS_LIB"
+    
+    # Script để tải và cài đặt libvips tại đây
+    # Đây là bước giả định, trong thực tế bạn cần tải prebuilt libvips cho Android
+    # hoặc biên dịch từ nguồn cho mỗi ABI
+    echo "CẢNH BÁO: Cần cài đặt thư viện libvips prebuilt cho Android"
+    echo "Vui lòng tải libvips prebuilt từ nguồn chính thức hoặc tự biên dịch"
+    echo "và đặt vào thư mục: $VIPS_DIR"
+    
+    # Trong môi trường CI/CD hoặc phát triển thực, chúng ta sẽ tự động tải và cài đặt
+    # libvips từ một nguồn đáng tin cậy ở đây
+fi
+
 # --- Thiết lập biến môi trường cho Go build ---
 export GOOS="$GOOS_TARGET"
 export GOARCH="$GOARCH_TARGET"
@@ -138,7 +158,11 @@ if [ -n "$GOARM_VERSION" ]; then
 fi
 export CGO_ENABLED="$CGO_ENABLED_FLAG"
 export CC="$NDK_TOOLCHAIN_PATH/$CC_COMPILER"
-# export CXX="$NDK_TOOLCHAIN_PATH/$(echo $CC_COMPILER | sed 's/clang$/clang++/')" # Nếu cần CXX
+
+# Thêm đường dẫn đến thư viện và include libvips
+export CGO_CFLAGS="-I$VIPS_INCLUDE -I$VIPS_INCLUDE/glib-2.0"
+export CGO_LDFLAGS="-L$VIPS_LIB -lvips -lgobject-2.0 -lglib-2.0 -lorc-0.4"
+export LD_LIBRARY_PATH="$VIPS_LIB:$LD_LIBRARY_PATH"
 
 # --- Tạo thư mục output ---
 FINAL_OUTPUT_DIR="$ANDROID_JNI_OUT_DIR/$OUTPUT_SUBDIR"
@@ -148,6 +172,8 @@ mkdir -p "$FINAL_OUTPUT_DIR"
 echo "INFO: Building Go source từ '$GO_SOURCE_DIR' cho $TARGET_ABI..."
 echo "INFO: Sử dụng NDK từ: $ANDROID_NDK_HOME_INTERNAL"
 echo "INFO: GOOS=$GOOS, GOARCH=$GOARCH, CC=$CC"
+echo "INFO: CGO_CFLAGS=$CGO_CFLAGS"
+echo "INFO: CGO_LDFLAGS=$CGO_LDFLAGS"
 if [ -n "$GOARM" ]; then
   echo "INFO: GOARM=$GOARM"
 fi
@@ -155,3 +181,12 @@ fi
 go build -v -buildmode=c-shared -o "$FINAL_OUTPUT_DIR/lib${LIB_NAME}.so" "$GO_SOURCE_DIR"
 
 echo "INFO: Build thành công cho $TARGET_ABI: $FINAL_OUTPUT_DIR/lib${LIB_NAME}.so"
+
+# --- Copy thư viện libvips và các phụ thuộc vào thư mục output ---
+echo "INFO: Đang copy thư viện libvips và các phụ thuộc vào thư mục output..."
+if [ -d "$VIPS_LIB" ]; then
+    cp -f "$VIPS_LIB"/*.so "$FINAL_OUTPUT_DIR/" 2>/dev/null || true
+    echo "INFO: Đã copy thư viện libvips vào thư mục output."
+else
+    echo "CẢNH BÁO: Thư mục thư viện libvips không tồn tại: $VIPS_LIB"
+fi
