@@ -46,5 +46,5 @@ app.*.map.json
 
 /image_processor/build
 
-ios/libs/
+ios/ImageProcessorSPM
 android/app/src/main/jniLibs/

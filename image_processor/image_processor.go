@@ -499,7 +499,7 @@ func openImageWithOrientation(filePath string) (image.Image, error) {
 }
 
 // Lưu ảnh với thông tin EXIF được bảo toàn
-func saveImagePreservingMetadata(img image.Image, outputPath string, inputPath string, quality int) error {
+func saveImagePreservingMetadata(img image.Image, outputPath string, quality int) error {
 	// Tạo thư mục đầu ra nếu chưa tồn tại
 	if err := ensureOutputDir(outputPath); err != nil {
 		return err
@@ -566,7 +566,7 @@ func openAndProcess(inputPath string, processFunc func(img image.Image) (image.I
 	// Lưu kết quả trong goroutine riêng để tránh chặn
 	saveResult := make(chan error, 1)
 	go func() {
-		saveErr := saveImagePreservingMetadata(result, outputPath, inputPath, quality)
+		saveErr := saveImagePreservingMetadata(result, outputPath, quality)
 		result = nil // Giải phóng bộ nhớ
 		runtime.GC()
 		saveResult <- saveErr
@@ -709,11 +709,7 @@ func addToCache(key, outputPath string) {
 	hashKey := generateHashKey(key)
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
-
-	processCache[hashKey] = &cachedResult{
-		path:      outputPath,
-		createdAt: time.Now(),
-	}
+	processCache[hashKey] = &cachedResult{path: outputPath, createdAt: time.Now()}
 }
 
 // Kiểm tra cache
@@ -882,7 +878,7 @@ func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width,
 		// Lưu kết quả trong goroutine riêng
 		saveChan := make(chan error, 1)
 		go func() {
-			saveErr := saveImagePreservingMetadata(dst, outputPath, basePath, quality)
+			saveErr := saveImagePreservingMetadata(dst, outputPath, quality)
 			dst = nil // Giải phóng bộ nhớ
 			runtime.GC()
 			saveChan <- saveErr
@@ -962,7 +958,7 @@ func applyBoardOverlay(inputPath, outputPath, backgroundFile string, width, heig
 		// Lưu kết quả trong goroutine riêng
 		saveChan := make(chan error, 1)
 		go func() {
-			saveErr := saveImagePreservingMetadata(dst, outputPath, inputPath, quality)
+			saveErr := saveImagePreservingMetadata(dst, outputPath, quality)
 			dst = nil // Giải phóng bộ nhớ
 			runtime.GC()
 			saveChan <- saveErr

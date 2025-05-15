@@ -16,10 +16,10 @@ jobs:
       - name: Cài đặt Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.1"
+          flutter-version: "3.29.3"
           channel: "stable"
           cache: true
-          architecture: x64
+          # architecture: x64
 
       - name: Cài đặt dependencies
         run: flutter pub get
@@ -27,8 +27,8 @@ jobs:
       - name: Flutter generate models
         run: flutter pub run build_runner build --delete-conflicting-outputs
 
-      - name: Flutter generate locale
-        run: flutter pub run bin/generate.dart
+      # - name: Flutter generate locale
+      #   run: flutter pub run bin/generate.dart
 
       # Kiểm tra 2.1 và 2.2: Code compiles without warnings, Static analysis
       - name: Phân tích code
@@ -173,12 +173,16 @@ jobs:
 
           # Lấy thông tin commits
           echo "### Commits:" >> reports/analysis_results.md
-          git log --pretty=format:"- %h: %s" -n 5 >> reports/analysis_results.md
+          git log --pretty=format:"- %h: %s" -n 5 >> reports/analysis_results.md 2>/dev/null || echo "- Không thể lấy thông tin commit" >> reports/analysis_results.md
           echo "" >> reports/analysis_results.md
 
-          # Lấy thông tin file thay đổi
+          # Lấy thông tin file thay đổi (sử dụng context của GitHub)
           echo "### Files thay đổi:" >> reports/analysis_results.md
-          git diff --name-only HEAD~1 HEAD >> reports/analysis_results.md
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Xem chi tiết tại PR: ${{ github.event.pull_request.html_url }}/files" >> reports/analysis_results.md
+          else
+            echo "Commit hiện tại: ${{ github.sha }}" >> reports/analysis_results.md
+          fi
           echo "" >> reports/analysis_results.md
 
           # Tổng hợp kết quả kiểm tra
@@ -249,8 +253,8 @@ jobs:
           echo "### [Xem chi tiết tại đây](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> reports/analysis_results.md
 
       - name: Upload analysis report
-        if: always()
-        uses: actions/upload-artifact@v3
+        if: always() && hashFiles('reports/analysis_results.md') != ''
+        uses: actions/upload-artifact@v4
         with:
           name: analysis-report
           path: reports/analysis_results.md
@@ -276,108 +280,108 @@ jobs:
       # Chỉ upload artifact khi chạy trong GitHub Actions
       - name: Upload checklist
         if: ${{ github.actions }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: manual-review-checklist
           path: .github/pull_request_template.md
 
-  notify_leader:
-    name: Thông báo cho Leader
-    runs-on: ubuntu-latest
-    needs: [analyze_and_test, manual_review_checklist]
-    if: always() && github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v3
+  # notify_leader:
+  #   name: Thông báo cho Leader
+  #   runs-on: ubuntu-latest
+  #   needs: [analyze_and_test, manual_review_checklist]
+  #   if: always() && github.event_name == 'pull_request'
+  #   steps:
+  #     - uses: actions/checkout@v3
 
-      - name: Tải báo cáo phân tích
-        uses: actions/download-artifact@v3
-        with:
-          name: analysis-report
-          path: reports
+  #     - name: Tải báo cáo phân tích
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: analysis-report
+  #         path: reports
 
-      - name: Đọc báo cáo phân tích
-        id: read_report
-        run: |
-          REPORT_CONTENT=$(cat reports/analysis_results.md)
-          # Escape newlines and special characters for GitHub Actions
-          REPORT_CONTENT="${REPORT_CONTENT//'%'/'%25'}"
-          REPORT_CONTENT="${REPORT_CONTENT//$'\n'/'%0A'}"
-          REPORT_CONTENT="${REPORT_CONTENT//$'\r'/'%0D'}"
-          echo "::set-output name=content::$REPORT_CONTENT"
+  #     - name: Đọc báo cáo phân tích
+  #       id: read_report
+  #       run: |
+  #         REPORT_CONTENT=$(cat reports/analysis_results.md)
+  #         # Escape newlines and special characters for GitHub Actions
+  #         REPORT_CONTENT="${REPORT_CONTENT//'%'/'%25'}"
+  #         REPORT_CONTENT="${REPORT_CONTENT//$'\n'/'%0A'}"
+  #         REPORT_CONTENT="${REPORT_CONTENT//$'\r'/'%0D'}"
+  #         echo "::set-output name=content::$REPORT_CONTENT"
 
-      # Gửi thông báo qua Slack
-      - name: Thông báo qua Slack
-        uses: slackapi/slack-github-action@v1.23.0
-        with:
-          payload: |
-            {
-              "text": "Kết quả kiểm tra PR từ ${{ github.event.pull_request.user.login }}",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "🔍 Báo cáo kiểm tra PR"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*PR:* <${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}>\n*Người tạo:* ${{ github.event.pull_request.user.login }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "${{ steps.read_report.outputs.content }}"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "Xem PR"
-                      },
-                      "url": "${{ github.event.pull_request.html_url }}"
-                    },
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "Xem Workflow"
-                      },
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    }
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  #     # Gửi thông báo qua Slack
+  #     - name: Thông báo qua Slack
+  #       uses: slackapi/slack-github-action@v1.23.0
+  #       with:
+  #         payload: |
+  #           {
+  #             "text": "Kết quả kiểm tra PR từ ${{ github.event.pull_request.user.login }}",
+  #             "blocks": [
+  #               {
+  #                 "type": "header",
+  #                 "text": {
+  #                   "type": "plain_text",
+  #                   "text": "🔍 Báo cáo kiểm tra PR"
+  #                 }
+  #               },
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "*PR:* <${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}>\n*Người tạo:* ${{ github.event.pull_request.user.login }}"
+  #                 }
+  #               },
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "${{ steps.read_report.outputs.content }}"
+  #                 }
+  #               },
+  #               {
+  #                 "type": "actions",
+  #                 "elements": [
+  #                   {
+  #                     "type": "button",
+  #                     "text": {
+  #                       "type": "plain_text",
+  #                       "text": "Xem PR"
+  #                     },
+  #                     "url": "${{ github.event.pull_request.html_url }}"
+  #                   },
+  #                   {
+  #                     "type": "button",
+  #                     "text": {
+  #                       "type": "plain_text",
+  #                       "text": "Xem Workflow"
+  #                     },
+  #                     "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  #                   }
+  #                 ]
+  #               }
+  #             ]
+  #           }
+  #       env:
+  #         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-      # Tùy chọn: Thông báo qua Microsoft Teams
-      # - name: Thông báo qua Microsoft Teams
-      #   if: false # Bỏ comment dòng này để kích hoạt
-      #   uses: toko-bifrost/ms-teams-deploy-card@master
-      #   with:
-      #     webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
-      #     title: "Báo cáo kiểm tra PR"
-      #     summary: "PR: ${{ github.event.pull_request.title }}"
-      #     text: "${{ steps.read_report.outputs.content }}"
-      #     theme-color: "0078D7"
-      #     actions: '[{"@type": "OpenUri", "name": "Xem PR", "targets": [{"os": "default", "uri": "${{ github.event.pull_request.html_url }}"}]}, {"@type": "OpenUri", "name": "Xem Workflow", "targets": [{"os": "default", "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]'
+  # Tùy chọn: Thông báo qua Microsoft Teams
+  # - name: Thông báo qua Microsoft Teams
+  #   if: false # Bỏ comment dòng này để kích hoạt
+  #   uses: toko-bifrost/ms-teams-deploy-card@master
+  #   with:
+  #     webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+  #     title: "Báo cáo kiểm tra PR"
+  #     summary: "PR: ${{ github.event.pull_request.title }}"
+  #     text: "${{ steps.read_report.outputs.content }}"
+  #     theme-color: "0078D7"
+  #     actions: '[{"@type": "OpenUri", "name": "Xem PR", "targets": [{"os": "default", "uri": "${{ github.event.pull_request.html_url }}"}]}, {"@type": "OpenUri", "name": "Xem Workflow", "targets": [{"os": "default", "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}]}]'
 
-      # Tùy chọn: Thông báo qua Discord
-      # - name: Thông báo qua Discord
-      #   if: false # Bỏ comment dòng này để kích hoạt
-      #   uses: Ilshidur/action-discord@master
-      #   with:
-      #     args: 'PR: ${{ github.event.pull_request.title }}\nNgười tạo: ${{ github.event.pull_request.user.login }}\n${{ steps.read_report.outputs.content }}'
-      #   env:
-      #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+  # Tùy chọn: Thông báo qua Discord
+  # - name: Thông báo qua Discord
+  #   if: false # Bỏ comment dòng này để kích hoạt
+  #   uses: Ilshidur/action-discord@master
+  #   with:
+  #     args: 'PR: ${{ github.event.pull_request.title }}\nNgười tạo: ${{ github.event.pull_request.user.login }}\n${{ steps.read_report.outputs.content }}'
+  #   env:
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
