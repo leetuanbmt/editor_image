@@ -30,20 +30,20 @@ init_report() {
 # Cài đặt dependencies
 setup_dependencies() {
   echo "🔍 Cài đặt dependencies"
-  fvm flutter pub get
+  flutter pub get
 }
 
 # Tạo models và locale
 generate_code() {
   echo "🔍 Tạo models và locale"
-  fvm flutter pub run build_runner build --delete-conflicting-outputs
-  fvm flutter pub run bin/generate.dart
+  flutter pub run build_runner build --delete-conflicting-outputs
+  flutter pub run bin/generate.dart
 }
 
 # Phân tích code
 analyze_code() {
   echo "🔍 Phân tích code"
-  if fvm flutter analyze > /dev/null 2>&1; then
+  if flutter analyze > /dev/null 2>&1; then
     echo "✅ **Phân tích code**: Passed" | tee -a reports/analysis_results.md
   else
     echo "❌ **Phân tích code**: Failed" | tee -a reports/analysis_results.md
@@ -182,7 +182,7 @@ check_try_catch() {
 # Kiểm tra dependencies
 check_outdated_dependencies() {
   echo "🔍 Kiểm tra dependencies"
-  fvm flutter pub outdated
+  flutter pub outdated
 }
 
 # Kiểm tra biến môi trường

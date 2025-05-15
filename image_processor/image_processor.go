@@ -971,5 +971,3 @@ func applyBoardOverlay(inputPath, outputPath, backgroundFile string, width, heig
 		return nil
 	})
 }
-
-func main() {}
