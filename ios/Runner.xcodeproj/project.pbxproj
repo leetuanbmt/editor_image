@@ -247,7 +247,7 @@
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
-				5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "ImageProcessorSPM" */,
+				5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "Frameworks" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -491,9 +491,9 @@
 				);
 				OTHER_LDFLAGS = (
 					"-force_load",
-					"/Users/tuanvm/Desktop/plugin/editor_image/ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64/image_processor.a",
+					"/Users/tuanvm/Desktop/plugin/editor_image/ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64/image_processor.a",
 					"-force_load",
-					"/Users/tuanvm/Desktop/plugin/editor_image/ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
+					"/Users/tuanvm/Desktop/plugin/editor_image/ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.editorImage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -680,7 +680,7 @@
 				);
 				OTHER_LDFLAGS = (
 					"-force_load",
-					"/Users/tuanvm/Desktop/plugin/editor_image/ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
+					"/Users/tuanvm/Desktop/plugin/editor_image/ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.editorImage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -707,9 +707,9 @@
 				);
 				OTHER_LDFLAGS = (
 					"-force_load",
-					"/Users/tuanvm/Desktop/plugin/editor_image/ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64/image_processor.a",
+					"/Users/tuanvm/Desktop/plugin/editor_image/ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64/image_processor.a",
 					"-force_load",
-					"/Users/tuanvm/Desktop/plugin/editor_image/ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
+					"/Users/tuanvm/Desktop/plugin/editor_image/ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.editorImage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -755,9 +755,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "ImageProcessorSPM" */ = {
+		5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "Frameworks" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ImageProcessorSPM;
+			relativePath = Frameworks;
 		};
 		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -768,7 +768,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		5E0C35B22DD2DD19008C45F1 /* ImageProcessor */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "ImageProcessorSPM" */;
+			package = 5E0C35B12DD2DD0D008C45F1 /* XCLocalSwiftPackageReference "Frameworks" */;
 			productName = ImageProcessor;
 		};
 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {

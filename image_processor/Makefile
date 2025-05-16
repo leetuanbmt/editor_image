@@ -32,7 +32,7 @@ MIN_IOS_VERSION ?= 12.0
 ANDROID_ABIS   ?= arm64-v8a armeabi-v7a x86_64 x86
 
 # Thư mục output XCFramework cho Swift Package
-SPM_XCFRAMEWORK_DIR ?= ../ios/ImageProcessorSPM/xcframeworks
+SPM_XCFRAMEWORK_DIR ?= ../ios/Frameworks/xcframeworks
 
 # --- Targets Chính ---
 .PHONY: all android ios clean

@@ -85,7 +85,6 @@ export CC="${CLANG_COMPILER} -target ${IOS_TARGET_TRIPLE} -isysroot ${SDK_PATH}"
 unset CGO_CFLAGS
 unset CGO_LDFLAGS
 
-
 # --- Tạo thư mục output ---
 OUTPUT_DIR="build/ios"
 mkdir -p "$OUTPUT_DIR"
@@ -104,10 +103,82 @@ echo "INFO: IOS_TARGET_TRIPLE=$IOS_TARGET_TRIPLE"
 echo "INFO: CGO_CFLAGS (sau khi unset) = $CGO_CFLAGS"
 echo "INFO: CGO_LDFLAGS (sau khi unset)= $CGO_LDFLAGS"
 
-
 go build -v -trimpath -buildmode=c-archive -o "${OUTPUT_FILE_BASE}.a" "$GO_SOURCE_DIR"
 
 # File header .h sẽ được tạo cùng tên với file .a
 echo "INFO: Build thành công cho iOS $TARGET_SDK ($TARGET_GOARCH):"
 echo "  Archive: ${OUTPUT_FILE_BASE}.a"
 echo "  Header:  ${OUTPUT_FILE_BASE}.h"
+
+# # --- Tạo XCFramework ---
+# echo "INFO: Creating XCFramework..."
+# XCFRAMEWORK_DIR="../ios/Frameworks/xcframeworks"
+# mkdir -p "$XCFRAMEWORK_DIR"
+
+# xcodebuild -create-xcframework \
+#   -library "${OUTPUT_DIR}/${LIB_NAME}_arm64_iphoneos.a" \
+#   -library "${OUTPUT_DIR}/${LIB_NAME}_arm64_iphonesimulator.a" \
+#   -output "${XCFRAMEWORK_DIR}/${LIB_NAME}.xcframework"
+
+# --- Tạo Package.swift ---
+echo "INFO: Creating Package.swift..."
+SPM_DIR="../ios/Frameworks"
+mkdir -p "$SPM_DIR"
+
+cat > "$SPM_DIR/Package.swift" << 'EOF'
+// swift-tools-version:5.6
+import PackageDescription
+
+let package = Package(
+    name: "ImageProcessor",
+    platforms: [
+        .iOS(.v12)
+    ],
+    products: [
+        .library(
+            name: "ImageProcessor",
+            targets: ["ImageProcessor"]
+        ),
+    ],
+    targets: [
+        .binaryTarget(
+            name: "ImageProcessor",
+            path: "xcframeworks/image_processor.xcframework"
+        ),
+    ]
+)
+EOF
+
+echo "INFO: Swift Package Manager setup completed at $SPM_DIR"
+
+
+
+echo "INFO: Creating podspec..."
+
+cat > "$SPM_DIR/ImageProcessor.podspec" << 'EOF'
+
+Pod::Spec.new do |s|
+  s.name             = 'ImageProcessor'
+  s.version          = '1.0.0'
+  s.summary          = 'A Flutter plugin for image processing'
+  s.description      = <<-DESC
+A Flutter plugin that provides image processing capabilities including cropping, resizing, and overlaying images.
+                       DESC
+  s.homepage         = 'https://github.com/leetuanbmt/editor_image'
+  s.license          = { :type => 'MIT', :text => 'MIT' }
+  s.author           = { 'Leetuan' => 'leetuanbmt@gmail.com' }
+  s.source           = { :path => '.' }
+  s.source_files     = 'Classes/**/*'
+  s.public_header_files = 'Classes/**/*.h'
+  s.dependency 'Flutter'
+  s.platform         = :ios, '12.0'
+  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
+  s.swift_version    = '5.0'
+  s.vendored_frameworks = 'xcframeworks/image_processor.xcframework'
+
+  s.user_target_xcconfig = {
+    'OTHER_LDFLAGS' => '-force_load $(PROJECT_DIR)/Frameworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a'
+  }
+end
+
+
