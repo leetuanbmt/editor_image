@@ -1,0 +1,94 @@
+title Kansuke-GitFlow
+
+participant features/sheet_list/CR/{task}
+participant features/sheet_list/develop
+participant develop
+participant release/{version}
+participant main
+participant hotfix/{task}
+
+
+
+opt Phát triển feature
+opt Start coding
+develop->features/sheet_list/develop: Tạo branch develop phụ từ develop
+note right of features/sheet_list/develop: features/RQ/develop
+end
+
+opt Do task + test (lặp lại)
+opt Start task
+features/sheet_list/develop->features/sheet_list/CR/{task}: Tạo task từ develop phụ
+note right of features/sheet_list/CR/{task}: features/RQ/CR/XXX01
+end
+
+opt Done task
+features/sheet_list/CR/{task}->features/sheet_list/develop: Merge task về develop phụ
+end
+
+opt Do test
+features/sheet_list/develop->features/sheet_list/develop: QC test trên develop phụ
+end
+end
+
+opt Done test
+features/sheet_list/develop->develop: Merge develop phụ về develop
+
+end
+
+opt Đồng bộ code định kì hoặc có thay đổi trên develop
+develop->features/sheet_list/develop: Merge develop phụ về develop
+note left of features/sheet_list/develop: Đồng bộ code
+end
+end
+
+
+
+opt Submit store
+opt Start submit
+develop->release/{version}: tạo nhánh release
+note left of release/{version}: release/1.2
+end
+
+opt Do submit (lặp lại)
+opt Fix: bug, reject (nếu có)
+release/{version}->release/{version}: Commit vào release
+release/{version}->release/{version}: KH xác nhận (optional)
+end
+
+release/{version}->main: Merge release về main
+main->main: Build trên main
+note left of main: Tiến hành submit
+end
+
+opt Done submit
+main->develop: Merge main về develop
+note right of develop: Đồng bộ code
+
+end
+end
+
+opt Hotfix
+opt Start hotfix
+main->hotfix/{task}: tạo hotfix từ main
+end 
+
+opt Do hotfix (lặp lại)
+opt Fix + Test (lặp lại)
+hotfix/{task}->hotfix/{task}: Commit vào hotfix
+hotfix/{task}->hotfix/{task}: QC test trên hotfix
+hotfix/{task}->hotfix/{task}: KH xác nhận (optional)
+end
+hotfix/{task}->main: Merge hotfix về main
+main->main: Build trên main
+note left of main: Tiến hành submit
+end
+
+opt Done submit
+main->develop: Merge main về develop
+note right of develop: Đồng bộ code
+end 
+
+
+end
+
+
