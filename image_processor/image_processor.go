@@ -11,9 +11,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
-	"image/draw"
 	"image/jpeg"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -259,26 +259,21 @@ func OverlayImage(inputPath, overlayPath, outputPath *C.char, x, y, overlayWidth
 	return C.CString(fmt.Sprintf("success:%d", processingTime))
 }
 
-//export ApplyBoardOverlay
-func ApplyBoardOverlay(inputPath, outputPath, backgroundFile *C.char, width, height C.double, x, y C.double, quality C.int32_t) *C.char {
+//export FixImageOrientation
+func FixImageOrientation(inputPath, outputPath *C.char, quality C.int32_t) *C.char {
 	startTime := time.Now()
 
 	inPath := C.GoString(inputPath)
 	outPath := C.GoString(outputPath)
-	bgFile := C.GoString(backgroundFile)
 	jpegQuality := int(quality)
 	if jpegQuality <= 0 {
 		jpegQuality = DefaultJPEGQuality
 	}
 
 	// Tạo hash key cho cache
-	cacheKey := fmt.Sprintf("board:%s:%s:%f:%f:%f:%f:%d",
-		inPath, bgFile, float64(width), float64(height),
-		float64(x), float64(y), jpegQuality)
-
+	cacheKey := fmt.Sprintf("fix_orientation:%s:%d", inPath, jpegQuality)
 	if EnableCache {
 		if cachedPath := checkCache(cacheKey, outPath); cachedPath != "" {
-			// Trả về thành công ngay từ cache
 			return C.CString(fmt.Sprintf("success_cached:%d", 0))
 		}
 	}
@@ -287,27 +282,17 @@ func ApplyBoardOverlay(inputPath, outputPath, backgroundFile *C.char, width, hei
 		return C.CString(fmt.Sprintf("image size check failed: %v", err))
 	}
 
-	if bgFile != "" {
-		if err := checkImageSize(bgFile); err != nil {
-			return C.CString(fmt.Sprintf("background image size check failed: %v", err))
-		}
-	}
-
-	err := applyBoardOverlay(inPath, outPath, bgFile, int(width), int(height), float64(x), float64(y), jpegQuality)
-
-	// Tính thời gian xử lý
+	err := fixImageOrientation(inPath, outPath, jpegQuality)
 	processingTime := time.Since(startTime).Milliseconds()
 
 	if err != nil {
-		return C.CString(fmt.Sprintf("failed to apply board overlay: %v", err))
+		return C.CString(fmt.Sprintf("failed to fix orientation: %v", err))
 	}
 
-	// Lưu vào cache nếu thành công
 	if EnableCache {
 		addToCache(cacheKey, outPath)
 	}
 
-	// Trả về chuỗi rỗng và thời gian xử lý (ms)
 	return C.CString(fmt.Sprintf("success:%d", processingTime))
 }
 
@@ -777,16 +762,49 @@ func cropImage(inputPath, outputPath string, cropX, cropY, cropWidth, cropHeight
 	})
 }
 
+// Calculate resize dimensions to fill (cover) the target size while preserving aspect ratio.
+// The result will be at least as large as the target in both dimensions, possibly cropping.
+func calculateResizeDimensions(img image.Image, targetWidth, targetHeight int) (width, height int) {
+	bounds := img.Bounds()
+	origWidth := bounds.Dx()
+	origHeight := bounds.Dy()
+
+	if targetWidth <= 0 || targetHeight <= 0 {
+		return origWidth, origHeight
+	}
+
+	widthRatio := float64(targetWidth) / float64(origWidth)
+	heightRatio := float64(targetHeight) / float64(origHeight)
+
+	// Use the larger ratio to ensure the image covers the target size
+	ratio := widthRatio
+	if heightRatio > widthRatio {
+		ratio = heightRatio
+	}
+
+	// Prevent upscaling beyond original size if not desired (optional)
+	// if ratio > 1 {
+	// 	ratio = 1
+	// }
+
+	newWidth := int(float64(origWidth) * ratio)
+	newHeight := int(float64(origHeight) * ratio)
+	return newWidth, newHeight
+}
+
 func resizeImage(inputPath, outputPath string, width, height int, quality int) error {
 	return processWithTimeout(func() error {
 		return openAndProcess(inputPath, func(img image.Image) (image.Image, error) {
+			// Tính toán kích thước resize phù hợp
+			newWidth, newHeight := calculateResizeDimensions(img, width, height)
+
 			// Sử dụng thuật toán nhanh hơn cho ảnh lớn
 			filter := imaging.Lanczos
 			if isLargeImage(inputPath) && quality < 90 {
 				// Dùng box filter cho ảnh lớn và chất lượng thấp
 				filter = imaging.Box
 			}
-			return imaging.Resize(img, width, height, filter), nil
+			return imaging.Resize(img, newWidth, newHeight, filter), nil
 		}, outputPath, quality)
 	})
 }
@@ -801,6 +819,9 @@ func cropAndResizeImage(inputPath, outputPath string, cropX, cropY, cropWidth, c
 			img = nil // Giải phóng ảnh gốc
 			runtime.GC()
 
+			// Tính toán kích thước resize phù hợp
+			newWidth, newHeight := calculateResizeDimensions(cropped, width, height)
+
 			// Sử dụng thuật toán nhanh hơn cho ảnh lớn
 			filter := imaging.Lanczos
 			if quality < 90 {
@@ -808,13 +829,14 @@ func cropAndResizeImage(inputPath, outputPath string, cropX, cropY, cropWidth, c
 				filter = imaging.Box
 			}
 
-			return imaging.Resize(cropped, width, height, filter), nil
+			return imaging.Resize(cropped, newWidth, newHeight, filter), nil
 		}, outputPath, quality)
 	})
 }
 
 func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width, height int, quality int) error {
 	return processWithTimeout(func() error {
+		startTotal := time.Now()
 		// Đảm bảo thư mục đầu ra tồn tại
 		if err := ensureOutputDir(outputPath); err != nil {
 			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
@@ -826,19 +848,23 @@ func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width,
 		var baseErr, overlayErr error
 
 		// Tải song song hai ảnh với xử lý orientation
-		wg.Add(2)
+		startLoadBase := time.Now()
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			baseImg, baseErr = openImageWithOrientation(basePath)
 		}()
 
+		startLoadOverlay := time.Now()
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			overlayImg, overlayErr = openImageWithOrientation(overlayPath)
 		}()
 
-		// Đợi tải xong
 		wg.Wait()
+		log.Printf("Load base: %v ms", time.Since(startLoadBase).Milliseconds())
+		log.Printf("Load overlay: %v ms", time.Since(startLoadOverlay).Milliseconds())
 
 		// Kiểm tra lỗi
 		if baseErr != nil {
@@ -859,23 +885,32 @@ func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width,
 		runtime.GC()
 
 		// Resize overlay nếu cần
+		var startResizeOverlay time.Time
 		if width > 0 && height > 0 {
+			startResizeOverlay = time.Now()
+			// Tính toán kích thước resize phù hợp
+			newWidth, newHeight := calculateResizeDimensions(overlayImg, width, height)
+
 			// Chọn thuật toán resize dựa trên chất lượng
-			filter := imaging.Lanczos
-			if quality < 90 {
-				filter = imaging.Box // Nhanh hơn cho chất lượng thấp
+			filter := imaging.Box // Nhanh hơn cho chất lượng thấp
+			if quality >= 90 {
+				filter = imaging.Lanczos
 			}
-			overlayImg = imaging.Resize(overlayImg, width, height, filter)
+			overlayImg = imaging.Resize(overlayImg, newWidth, newHeight, filter)
+			log.Printf("Resize overlay: %v ms", time.Since(startResizeOverlay).Milliseconds())
 		}
 
 		// Đặt overlay lên ảnh nền
+		startPaste := time.Now()
 		dst = imaging.Paste(dst, overlayImg, image.Pt(int(x), int(y)))
+		log.Printf("Paste overlay: %v ms", time.Since(startPaste).Milliseconds())
 
 		// Giải phóng bộ nhớ
 		overlayImg = nil
 		runtime.GC()
 
 		// Lưu kết quả trong goroutine riêng
+		startSave := time.Now()
 		saveChan := make(chan error, 1)
 		go func() {
 			saveErr := saveImagePreservingMetadata(dst, outputPath, quality)
@@ -887,87 +922,39 @@ func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width,
 		if err := <-saveChan; err != nil {
 			return fmt.Errorf("không thể lưu ảnh đã xử lý: %v", err)
 		}
+		log.Printf("Save output: %v ms", time.Since(startSave).Milliseconds())
+		log.Printf("Total overlayImage: %v ms", time.Since(startTotal).Milliseconds())
 
 		return nil
 	})
 }
 
-func applyBoardOverlay(inputPath, outputPath, backgroundFile string, width, height int, x, y float64, quality int) error {
+// Xoay lại hình ảnh cho đúng chiều dựa trên EXIF
+func fixImageOrientation(inputPath, outputPath string, quality int) error {
 	return processWithTimeout(func() error {
-		// Đảm bảo thư mục đầu ra tồn tại
-		if err := ensureOutputDir(outputPath); err != nil {
-			return fmt.Errorf("không thể tạo thư mục đầu ra: %v", err)
-		}
-
-		// Tải ảnh chính với xử lý orientation
-		baseImg, err := openImageWithOrientation(inputPath)
+		// Đọc orientation
+		file, err := os.Open(inputPath)
 		if err != nil {
-			return fmt.Errorf("không thể mở ảnh gốc: %v", err)
+			return fmt.Errorf("cannot open image: %v", err)
+		}
+		defer file.Close()
+
+		orientation, _ := getImageOrientation(file)
+		file.Close()
+
+		// Nếu đã đúng chiều thì chỉ copy/lưu lại
+		if orientation == 1 {
+			// Copy file hoặc lưu lại để giữ metadata
+			return copyFile(inputPath, outputPath)
 		}
 
-		bounds := baseImg.Bounds()
-		dst := image.NewRGBA(bounds)
-
-		// Bắt đầu vẽ theo từng lớp
-		draw.Draw(dst, bounds, baseImg, image.Point{}, draw.Src)
-
-		// Giải phóng bộ nhớ ngay sau khi sử dụng xong
-		baseImg = nil
-		runtime.GC()
-
-		// Xử lý ảnh nền nếu có, sử dụng goroutine
-		if backgroundFile != "" {
-			var wg sync.WaitGroup
-			var backgroundImg image.Image
-			var bgErr error
-
-			// Tải ảnh nền trong goroutine riêng với xử lý orientation
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				backgroundImg, bgErr = openImageWithOrientation(backgroundFile)
-				if bgErr == nil && backgroundImg != nil {
-					// Chọn thuật toán resize phù hợp
-					filter := imaging.Lanczos
-					if quality < 90 {
-						filter = imaging.Box
-					}
-					backgroundImg = imaging.Resize(backgroundImg, width, height, filter)
-				}
-			}()
-
-			// Đợi tải xong ảnh nền
-			wg.Wait()
-
-			if bgErr == nil && backgroundImg != nil {
-				bgRect := image.Rectangle{
-					Min: image.Point{int(x), int(y)},
-					Max: image.Point{int(x) + width, int(y) + height},
-				}
-
-				draw.Draw(dst, bgRect, backgroundImg, image.Point{}, draw.Over)
-
-				// Giải phóng bộ nhớ
-				backgroundImg = nil
-				runtime.GC()
-			} else if bgErr != nil {
-				fmt.Printf("Lỗi khi mở ảnh nền: %v\n", bgErr)
-			}
+		// Mở lại ảnh và xoay cho đúng chiều
+		img, err := imaging.Open(inputPath)
+		if err != nil {
+			return fmt.Errorf("cannot open image: %v", err)
 		}
+		img = fixOrientation(img, orientation)
 
-		// Lưu kết quả trong goroutine riêng
-		saveChan := make(chan error, 1)
-		go func() {
-			saveErr := saveImagePreservingMetadata(dst, outputPath, quality)
-			dst = nil // Giải phóng bộ nhớ
-			runtime.GC()
-			saveChan <- saveErr
-		}()
-
-		if err := <-saveChan; err != nil {
-			return fmt.Errorf("không thể lưu ảnh đã xử lý: %v", err)
-		}
-
-		return nil
+		return saveImagePreservingMetadata(img, outputPath, quality)
 	})
 }

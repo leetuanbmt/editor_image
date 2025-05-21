@@ -85,6 +85,7 @@ extern char* ResizeImage(char* inputPath, char* outputPath, double width, double
 extern char* CropAndResizeImage(char* inputPath, char* outputPath, double cropX, double cropY, double cropWidth, double cropHeight, double width, double height, int32_t quality);
 extern char* OverlayImage(char* inputPath, char* overlayPath, char* outputPath, double x, double y, double overlayWidth, double overlayHeight, int32_t quality);
 extern char* ApplyBoardOverlay(char* inputPath, char* outputPath, char* backgroundFile, double width, double height, double x, double y, int32_t quality);
+extern char* FixImageOrientation(char* inputPath, char* outputPath, int32_t quality);
 
 #ifdef __cplusplus
 }

@@ -37,7 +37,7 @@ setup_dependencies() {
 generate_code() {
   echo "🔍 Tạo models và locale"
   flutter pub run build_runner build --delete-conflicting-outputs
-  flutter pub run bin/generate.dart
+  # flutter pub run bin/generate.dart
 }
 
 # Phân tích code
@@ -153,7 +153,7 @@ check_flutter_lints() {
 # Chạy tests
 run_tests() {
   echo "🔍 Chạy tests"
-  if fvm flutter test --coverage > /dev/null 2>&1; then
+  if flutter test --coverage > /dev/null 2>&1; then
     echo "✅ **Tests**: Passed" | tee -a reports/analysis_results.md
   else
     echo "❌ **Tests**: Failed" | tee -a reports/analysis_results.md

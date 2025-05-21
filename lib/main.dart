@@ -1,12 +1,14 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'image_processor.dart';
+import 'overlay_image.dart';
 import 'src/utils/logger.dart';
 
 void main() {
@@ -58,7 +60,7 @@ class _MyAppState extends State<MyApp> {
 
   Future<String> getOutputPath() async {
     final tempDir = await getTemporaryDirectory();
-    return "${tempDir.path}/${_uuid.v4()}.jpg";
+    return '${tempDir.path}/${_uuid.v4()}.jpg';
   }
 
   late FileInfo inputInfo;
@@ -151,30 +153,27 @@ class _MyAppState extends State<MyApp> {
       _stopwatch.start();
 
       // Sử dụng API mới qua ImageProcessor
-      final result = await ImageProcessor.instance.resizeImage(
+      await ImageProcessor.instance.execute(
         inputPath: _inputImage!.path,
         outputPath: outputPath,
-        width: adjustSize.width,
-        height: adjustSize.height,
+        config: ResizeConfig(
+          width: adjustSize.width,
+          height: adjustSize.height,
+        ),
+        onCompleted: (file) {
+          setState(() {
+            _outputImage = File(outputPath);
+            _status = 'Đã thay đổi kích thước ảnh thành công';
+          });
+        },
+        onError: (error, stackTrace) {
+          Logger.d('Resize error: $error');
+          Logger.d('Resize stackTrace: $stackTrace');
+          setState(() {
+            _status = 'Lỗi khi thay đổi kích thước ảnh: ${error.toString()}';
+          });
+        },
       );
-
-      Logger.d('result $result');
-
-      if (result.success) {
-        setState(() {
-          _outputImage = File(outputPath);
-          _status = 'Đã thay đổi kích thước ảnh thành công';
-        });
-      } else {
-        setState(() {
-          _status = 'Lỗi khi thay đổi kích thước ảnh: ${result.errorMessage}';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _status = 'Lỗi: $e';
-      });
-      debugPrint(e.toString());
     } finally {
       _stopwatch.stop();
       final timeMs = _stopwatch.elapsedMilliseconds;
@@ -242,8 +241,8 @@ class _MyAppState extends State<MyApp> {
       // Cắt 50px từ mỗi cạnh
       final cropX = 50.0;
       final cropY = 50.0;
-      final cropWidth = imageWidth - 100.0;
-      final cropHeight = imageHeight - 100.0;
+      final cropWidth = imageWidth - cropX * 2;
+      final cropHeight = imageHeight - cropY * 2;
 
       Logger.d(
         'Crop region: [X:$cropX, Y:$cropY, W:$cropWidth, H:$cropHeight]',
@@ -254,25 +253,29 @@ class _MyAppState extends State<MyApp> {
       _stopwatch.start();
 
       // Sử dụng API mới qua ImageProcessor
-      final result = await ImageProcessor.instance.cropImage(
+      await ImageProcessor.instance.execute(
         inputPath: _inputImage!.path,
         outputPath: outputPath,
-        x: cropX,
-        y: cropY,
-        width: cropWidth,
-        height: cropHeight,
+        config: CropConfig(
+          cropX: cropX,
+          cropY: cropY,
+          cropWidth: cropWidth,
+          cropHeight: cropHeight,
+        ),
+        onCompleted: (file) {
+          setState(() {
+            _outputImage = File(outputPath);
+            _status = 'Đã cắt ảnh thành công';
+          });
+        },
+        onError: (error, stackTrace) {
+          Logger.d('Crop error: $error');
+          Logger.d('Crop stackTrace: $stackTrace');
+          setState(() {
+            _status = 'Lỗi khi cắt ảnh: ${error.toString()}';
+          });
+        },
       );
-
-      if (result.success) {
-        setState(() {
-          _outputImage = File(outputPath);
-          _status = 'Đã cắt ảnh thành công';
-        });
-      } else {
-        setState(() {
-          _status = 'Lỗi khi cắt ảnh: ${result.errorMessage}';
-        });
-      }
     } catch (e) {
       setState(() {
         _status = 'Lỗi: $e';
@@ -341,7 +344,7 @@ class _MyAppState extends State<MyApp> {
               // Hiển thị trạng thái của từng ký hiệu
               ExpansionTile(
                 initiallyExpanded: true,
-                title: const Text("Chi tiết về Symbols"),
+                title: const Text('Chi tiết về Symbols'),
                 children: [
                   ...ImageProcessor.instance.symbolCache.entries.map(
                     (entry) => Padding(
@@ -361,6 +364,17 @@ class _MyAppState extends State<MyApp> {
               ElevatedButton(
                 onPressed: pickImage,
                 child: const Text('Chọn ảnh'),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const OverlayImageEditorScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Overlay Image Editor'),
               ),
               const SizedBox(height: 16),
               if (_inputImage != null) ...[
@@ -580,28 +594,26 @@ class _MyAppState extends State<MyApp> {
 
 // Lớp lưu thông tin kết quả xử lý
 class ProcessResult {
-  final bool success;
-  final String? errorMessage;
-  final int processingTime;
-  final String processingText;
-
   ProcessResult({
     required this.success,
     this.errorMessage,
     required this.processingTime,
     required this.processingText,
   });
+  final bool success;
+  final String? errorMessage;
+  final int processingTime;
+  final String processingText;
 }
 
 // Lớp lưu thông tin file
 class FileInfo {
+  FileInfo({required this.size, required this.width, required this.height});
   final int size;
   final double width;
   final double height;
 
   Size get dimension => Size(width, height);
-
-  FileInfo({required this.size, required this.width, required this.height});
 }
 
 extension on File {

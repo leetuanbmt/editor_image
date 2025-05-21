@@ -7,7 +7,7 @@ description: |
 output: "lib/image_processor_bindings_generated.dart"
 headers:
   entry-points:
-    - "ios/ImageProcessorSPM/xcframeworks/image_processor.xcframework/ios-arm64/Headers/image_processor.h"
+    - "ios/Frameworks/xcframeworks/image_processor.xcframework/ios-arm64/Headers/image_processor.h"
 # llvm-path:
 #   - "/opt/homebrew/opt/llvm/bin"
 preamble: |
@@ -24,12 +24,14 @@ functions:
     - "^CropAndResizeImage$"
     - "^OverlayImage$"
     - "^ApplyBoardOverlay$"
+    - "^FixImageOrientation$"
   rename:
     CropImage: "cropImage"
     ResizeImage: "resizeImage"
     CropAndResizeImage: "cropAndResizeImage"
     OverlayImage: "overlayImage"
     ApplyBoardOverlay: "applyBoardOverlay"
+    FixImageOrientation: "fixImageOrientation"
 structs:
   exclude:
     - ".*" # Loại bỏ tất cả struct

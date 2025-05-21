@@ -22,10 +22,14 @@ func DebugMain() {
 	runtime.GC()
 
 	// Đường dẫn gốc
-	basePath := "/Users/tuanvm/Desktop"
+	basePath := "/Users/tuanvm/Desktop/editor/"
 
 	// Đường dẫn ảnh đầu vào - sử dụng trực tiếp file gốc
-	inputFile := filepath.Join(basePath, "Pizigani_1367_Chart_10MB.jpg")
+	inputFile := filepath.Join(basePath, "bg.jpg")
+
+	backgroundPath := filepath.Join(basePath, "overlay.jpg")
+
+	fmt.Println("inputFile", inputFile)
 
 	// Kiểm tra file tồn tại
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
@@ -38,23 +42,44 @@ func DebugMain() {
 		fmt.Printf("Kích thước file: %.2f MB\n", float64(fileInfo.Size())/(1024*1024))
 	}
 
-	// Đảm bảo xóa các file cache trước khi test
-	for _, f := range []string{"output_test1.jpg", "output_test2.jpg", "output_test3.jpg"} {
-		os.Remove(filepath.Join(basePath, f))
-	}
-
-	fmt.Println("\n===== TEST XỬ LÝ ORIENTATION ĐÚNG (ForceCorrectOrientation=true) =====")
-
 	// Chạy test với nhiều kích thước và chất lượng khác nhau
+	// testConfigs := []struct {
+	// 	name     string
+	// 	width    int
+	// 	height   int
+	// 	quality  int
+	// 	filename string
+	// }{
+	// 	{"Ảnh chuẩn (80% chất lượng + sửa orientation)", 1000, 600, 80, "output_test1.jpg"},
+	// }
+	// Overlay X 2827.2969203929806
+	// Overlay Y 1810.5424292845257
+	// Overlay width 1435.175879396985
+	// Overlay height 712.8119800332779
 	testConfigs := []struct {
-		name     string
-		width    int
-		height   int
-		quality  int
-		filename string
+		name           string
+		filename       string
+		inputPath      string
+		outputPath     string
+		backgroundPath string
+		overlayX       float64
+		overlayY       float64
+		overlayWidth   float64
+		overlayHeight  float64
+		quality        int
 	}{
-		{"Ảnh chuẩn (80% chất lượng + sửa orientation)", 800, 600, 80, "output_test1.jpg"},
-		{"Ảnh nhỏ với orientation (thử lại)", 300, 200, 80, "output_test2.jpg"},
+		{
+			name:           "Ảnh chuẩn (80% chất lượng + sửa orientation)",
+			filename:       "output_test1.jpg",
+			inputPath:      inputFile,
+			outputPath:     filepath.Join(basePath, "output_test1.jpg"),
+			backgroundPath: backgroundPath,
+			overlayX:       2827.2969203929806,
+			overlayY:       1810.5424292845257,
+			overlayWidth:   1435.175879396985,
+			overlayHeight:  712.8119800332779,
+			quality:        80,
+		},
 	}
 
 	// Điểm benchmark
@@ -74,13 +99,24 @@ func DebugMain() {
 		// Phân tích hiệu suất theo từng giai đoạn
 		beforeCall := time.Now()
 
-		// Gọi hàm resize
-		result := ResizeImage(
+		// // Gọi hàm resize
+		// result := ResizeImage(
+		// 	C.CString(inputFile),
+		// 	C.CString(outputPath),
+		// 	C.double(float64(cfg.width)),
+		// 	C.double(float64(cfg.height)),
+		// 	C.int32_t(int32(cfg.quality)),
+		// )
+
+		result := OverlayImage(
 			C.CString(inputFile),
+			C.CString(cfg.backgroundPath),
 			C.CString(outputPath),
-			C.double(float64(cfg.width)),
-			C.double(float64(cfg.height)),
-			C.int32_t(int32(cfg.quality)),
+			C.double(cfg.overlayX),      // cropX
+			C.double(cfg.overlayY),      // cropY
+			C.double(cfg.overlayWidth),  // cropWidth
+			C.double(cfg.overlayHeight), // cropHeight
+			C.int32_t(cfg.quality),
 		)
 
 		// Thời gian gọi hàm
