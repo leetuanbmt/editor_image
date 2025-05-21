@@ -6,7 +6,7 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 A Flutter plugin that provides image processing capabilities including cropping, resizing, and overlaying images.
                        DESC
-  s.homepage         = 'https://github.com/leetuanbmt/image_processor'
+  s.homepage         = 'https://github.com/leetuanbmt/editor_image'
   s.license          = { :type => 'MIT', :text => 'MIT' }
   s.author           = { 'Leetuan' => 'leetuanbmt@gmail.com' }
   s.source           = { :path => '.' }
