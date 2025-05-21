@@ -17,7 +17,7 @@
 
 # --- Biến Cấu Hình ---
 # Tên thư viện (không có lib prefix hay extension)
-LIB_NAME       ?= image_processor
+LIB_NAME       ?= libimage_processor
 # Thư mục chứa mã nguồn Go (nếu mã Go nằm trong thư mục này)
 GO_SOURCE_DIR  ?= .
 # Thư mục output XCFramework cho iOS (trong thư mục ios của Flutter)

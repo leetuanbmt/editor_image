@@ -21,7 +21,7 @@ void main() {
 
   runApp(
     MaterialApp(
-      showPerformanceOverlay: true,
+      showPerformanceOverlay: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -140,7 +140,7 @@ class _MyAppState extends State<MyApp> {
     //   'Input image size: $inputDimensions px, ${(inputSize / 1024).toStringAsFixed(2)} KB',
     // );
 
-    final adjustSize = calculatorSize(inputInfo.dimension, Size(300, 400));
+    final adjustSize = calculatorSize(inputInfo.dimension, Size(2000, 1500));
     // Logger.d(
     //   'Target resize dimensions: ${adjustSize.width.toInt()}x${adjustSize.height.toInt()} px',
     // );
@@ -423,25 +423,21 @@ class _MyAppState extends State<MyApp> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     ElevatedButton(
-                      onPressed:
-                          _processing ||
-                                  !(ImageProcessor
-                                          .instance
-                                          .symbolCache['ResizeImage'] ??
-                                      false)
-                              ? null
-                              : _resizeImage,
+                      onPressed: _processing ||
+                              !(ImageProcessor
+                                      .instance.symbolCache['ResizeImage'] ??
+                                  false)
+                          ? null
+                          : _resizeImage,
                       child: const Text('Resize'),
                     ),
                     ElevatedButton(
-                      onPressed:
-                          _processing ||
-                                  !(ImageProcessor
-                                          .instance
-                                          .symbolCache['CropImage'] ??
-                                      false)
-                              ? null
-                              : _cropImage,
+                      onPressed: _processing ||
+                              !(ImageProcessor
+                                      .instance.symbolCache['CropImage'] ??
+                                  false)
+                          ? null
+                          : _cropImage,
                       child: const Text('Cắt'),
                     ),
                   ],
@@ -467,10 +463,9 @@ class _MyAppState extends State<MyApp> {
                         _processingTimeText,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color:
-                              _processingTimeMs > 1000
-                                  ? Colors.orange
-                                  : Colors.blue,
+                          color: _processingTimeMs > 1000
+                              ? Colors.orange
+                              : Colors.blue,
                         ),
                       ),
                       // Hiển thị đánh giá tốc độ xử lý
@@ -528,10 +523,9 @@ class _MyAppState extends State<MyApp> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color:
-                                  _compressionRatio > 30
-                                      ? Colors.green
-                                      : Colors.blue,
+                              color: _compressionRatio > 30
+                                  ? Colors.green
+                                  : Colors.blue,
                             ),
                           ),
                       ],

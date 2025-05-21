@@ -260,7 +260,7 @@ func OverlayImage(inputPath, overlayPath, outputPath *C.char, x, y, overlayWidth
 }
 
 //export FixImageOrientation
-func FixImageOrientation(inputPath, outputPath *C.char, quality C.int32_t) *C.char {
+func FixImageOrientation(inputPath, outputPath *C.char, quality C.int32_t, orientation C.int32_t) *C.char {
 	startTime := time.Now()
 
 	inPath := C.GoString(inputPath)
@@ -282,7 +282,7 @@ func FixImageOrientation(inputPath, outputPath *C.char, quality C.int32_t) *C.ch
 		return C.CString(fmt.Sprintf("image size check failed: %v", err))
 	}
 
-	err := fixImageOrientation(inPath, outPath, jpegQuality)
+	err := fixImageOrientation(inPath, outPath, jpegQuality, int(orientation))
 	processingTime := time.Since(startTime).Milliseconds()
 
 	if err != nil {
@@ -930,18 +930,8 @@ func overlayImage(basePath, overlayPath, outputPath string, x, y float64, width,
 }
 
 // Xoay lại hình ảnh cho đúng chiều dựa trên EXIF
-func fixImageOrientation(inputPath, outputPath string, quality int) error {
+func fixImageOrientation(inputPath, outputPath string, quality int, orientation int) error {
 	return processWithTimeout(func() error {
-		// Đọc orientation
-		file, err := os.Open(inputPath)
-		if err != nil {
-			return fmt.Errorf("cannot open image: %v", err)
-		}
-		defer file.Close()
-
-		orientation, _ := getImageOrientation(file)
-		file.Close()
-
 		// Nếu đã đúng chiều thì chỉ copy/lưu lại
 		if orientation == 1 {
 			// Copy file hoặc lưu lại để giữ metadata

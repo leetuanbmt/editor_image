@@ -15,7 +15,7 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "ImageProcessor",
-            path: "xcframeworks/image_processor.xcframework"
+            path: "xcframeworks/libimage_processor.xcframework"
         ),
     ]
 )

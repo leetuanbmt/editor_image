@@ -16,10 +16,10 @@ A Flutter plugin that provides image processing capabilities including cropping,
   s.platform         = :ios, '12.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version    = '5.0'
-  s.vendored_frameworks = 'xcframeworks/image_processor.xcframework'
+  s.vendored_frameworks = 'xcframeworks/libimage_processor.xcframework'
 
   s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '-force_load $(PROJECT_DIR)/Frameworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a'
+    'OTHER_LDFLAGS' => '-force_load /Frameworks/libimage_processor.xcframework/ios-arm64-simulator/libimage_processor.a'
   }
 end
 

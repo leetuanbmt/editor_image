@@ -125,7 +125,7 @@ echo "INFO: Creating Package.swift..."
 SPM_DIR="../ios/Frameworks"
 mkdir -p "$SPM_DIR"
 
-cat > "$SPM_DIR/Package.swift" << 'EOF'
+cat > "$SPM_DIR/Package.swift" << EOF
 // swift-tools-version:5.6
 import PackageDescription
 
@@ -143,7 +143,7 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "ImageProcessor",
-            path: "xcframeworks/image_processor.xcframework"
+            path: "xcframeworks/${LIB_NAME}.xcframework"
         ),
     ]
 )
@@ -155,7 +155,7 @@ echo "INFO: Swift Package Manager setup completed at $SPM_DIR"
 
 echo "INFO: Creating podspec..."
 
-cat > "$SPM_DIR/ImageProcessor.podspec" << 'EOF'
+cat > "$SPM_DIR/ImageProcessor.podspec" << EOF
 
 Pod::Spec.new do |s|
   s.name             = 'ImageProcessor'
@@ -174,10 +174,10 @@ A Flutter plugin that provides image processing capabilities including cropping,
   s.platform         = :ios, '12.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version    = '5.0'
-  s.vendored_frameworks = 'xcframeworks/image_processor.xcframework'
+  s.vendored_frameworks = 'xcframeworks/${LIB_NAME}.xcframework'
 
   s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '-force_load $(PROJECT_DIR)/Frameworks/image_processor.xcframework/ios-arm64-simulator/image_processor.a'
+    'OTHER_LDFLAGS' => '-force_load $(PROJECT_DIR)/Frameworks/${LIB_NAME}.xcframework/ios-arm64-simulator/${LIB_NAME}.a'
   }
 end
 

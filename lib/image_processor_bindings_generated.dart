@@ -15,16 +15,17 @@ import 'dart:ffi' as ffi;
 class ImageProcessorBindings {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-  _lookup;
+      _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
   ImageProcessorBindings(ffi.DynamicLibrary dynamicLibrary)
-    : _lookup = dynamicLibrary.lookup;
+      : _lookup = dynamicLibrary.lookup;
 
   /// The symbols are looked up with [lookup].
   ImageProcessorBindings.fromLookup(
-    ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
-  ) : _lookup = lookup;
+      ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
+          lookup)
+      : _lookup = lookup;
 
   ffi.Pointer<ffi.Char> cropImage(
     ffi.Pointer<ffi.Char> inputPath,
@@ -47,31 +48,18 @@ class ImageProcessorBindings {
   }
 
   late final _cropImagePtr = _lookup<
-    ffi.NativeFunction<
-      ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Int32,
-      )
-    >
-  >('CropImage');
-  late final _cropImage =
-      _cropImagePtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
               ffi.Pointer<ffi.Char>,
               ffi.Pointer<ffi.Char>,
-              double,
-              double,
-              double,
-              double,
-              int,
-            )
-          >();
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Int32)>>('CropImage');
+  late final _cropImage = _cropImagePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>, double, double, double, double, int)>();
 
   ffi.Pointer<ffi.Char> resizeImage(
     ffi.Pointer<ffi.Char> inputPath,
@@ -80,31 +68,26 @@ class ImageProcessorBindings {
     double height,
     int quality,
   ) {
-    return _resizeImage(inputPath, outputPath, width, height, quality);
+    return _resizeImage(
+      inputPath,
+      outputPath,
+      width,
+      height,
+      quality,
+    );
   }
 
   late final _resizeImagePtr = _lookup<
-    ffi.NativeFunction<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Double,
+              ffi.Double,
+              ffi.Int32)>>('ResizeImage');
+  late final _resizeImage = _resizeImagePtr.asFunction<
       ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Double,
-        ffi.Double,
-        ffi.Int32,
-      )
-    >
-  >('ResizeImage');
-  late final _resizeImage =
-      _resizeImagePtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              double,
-              double,
-              int,
-            )
-          >();
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, double, double, int)>();
 
   ffi.Pointer<ffi.Char> cropAndResizeImage(
     ffi.Pointer<ffi.Char> inputPath,
@@ -131,35 +114,28 @@ class ImageProcessorBindings {
   }
 
   late final _cropAndResizeImagePtr = _lookup<
-    ffi.NativeFunction<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Int32)>>('CropAndResizeImage');
+  late final _cropAndResizeImage = _cropAndResizeImagePtr.asFunction<
       ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Int32,
-      )
-    >
-  >('CropAndResizeImage');
-  late final _cropAndResizeImage =
-      _cropAndResizeImagePtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              double,
-              double,
-              double,
-              double,
-              double,
-              double,
-              int,
-            )
-          >();
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          int)>();
 
   ffi.Pointer<ffi.Char> overlayImage(
     ffi.Pointer<ffi.Char> inputPath,
@@ -184,109 +160,44 @@ class ImageProcessorBindings {
   }
 
   late final _overlayImagePtr = _lookup<
-    ffi.NativeFunction<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Double,
+              ffi.Int32)>>('OverlayImage');
+  late final _overlayImage = _overlayImagePtr.asFunction<
       ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Int32,
-      )
-    >
-  >('OverlayImage');
-  late final _overlayImage =
-      _overlayImagePtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              double,
-              double,
-              double,
-              double,
-              int,
-            )
-          >();
-
-  ffi.Pointer<ffi.Char> applyBoardOverlay(
-    ffi.Pointer<ffi.Char> inputPath,
-    ffi.Pointer<ffi.Char> outputPath,
-    ffi.Pointer<ffi.Char> backgroundFile,
-    double width,
-    double height,
-    double x,
-    double y,
-    int quality,
-  ) {
-    return _applyBoardOverlay(
-      inputPath,
-      outputPath,
-      backgroundFile,
-      width,
-      height,
-      x,
-      y,
-      quality,
-    );
-  }
-
-  late final _applyBoardOverlayPtr = _lookup<
-    ffi.NativeFunction<
-      ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Double,
-        ffi.Int32,
-      )
-    >
-  >('ApplyBoardOverlay');
-  late final _applyBoardOverlay =
-      _applyBoardOverlayPtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              double,
-              double,
-              double,
-              double,
-              int,
-            )
-          >();
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          double,
+          double,
+          double,
+          double,
+          int)>();
 
   ffi.Pointer<ffi.Char> fixImageOrientation(
     ffi.Pointer<ffi.Char> inputPath,
     ffi.Pointer<ffi.Char> outputPath,
     int quality,
   ) {
-    return _fixImageOrientation(inputPath, outputPath, quality);
+    return _fixImageOrientation(
+      inputPath,
+      outputPath,
+      quality,
+    );
   }
 
   late final _fixImageOrientationPtr = _lookup<
-    ffi.NativeFunction<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>, ffi.Int32)>>('FixImageOrientation');
+  late final _fixImageOrientation = _fixImageOrientationPtr.asFunction<
       ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-        ffi.Int32,
-      )
-    >
-  >('FixImageOrientation');
-  late final _fixImageOrientation =
-      _fixImageOrientationPtr
-          .asFunction<
-            ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              int,
-            )
-          >();
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
 }
